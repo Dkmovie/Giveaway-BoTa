@@ -1,0 +1,58 @@
+{
+    "name": "Bot",
+    "description": "Bot",
+    "keywords": ["telegram"],
+    "website": "",
+    "repository": "",
+    "env": {
+      "BOT_TOKEN": {
+        "description": "Your bot token from @botfather",
+        "value": ""
+      },
+      "API_ID": {
+        "description": "Get this value from https://my.telegram.org",
+        "value": ""
+      },
+      "API_HASH": {
+        "description": "Get this value from https://my.telegram.org",
+        "value": ""
+      },
+      "OWNER_ID": {
+        "description": "ID of the Bot Owner",
+        "value": "",
+        "required": true
+      },
+      "DATABASE_NAME": {
+        "description": "Name of the database",
+        "value": "",
+        "required": false
+      },
+      "DATABASE_URL": {
+        "description": "Your database URI from mongodb.com",
+        "value": "",
+        "required": true
+      },
+      "UPDATE_CHANNEL": {
+        "description": "Enter the id of the channel for force subscription. Leave blank to disable",
+        "value": "",
+        "required": false
+      },
+      "LOG_CHANNEL": {
+        "description": "Enter the id of the channel for logging.",
+        "value": ""
+      }
+    },
+    "addons": [],
+    "buildpacks": [
+      {
+        "url": "heroku/python"
+      }
+    ],
+    "formation": {
+      "worker": {
+        "quantity": 1,
+        "size": "Eco"
+      }
+    }
+  }
+  
