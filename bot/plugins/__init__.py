@@ -33,5 +33,5 @@ async def raw_update_handler(bot, update, user, chat):
                 chat_id=user_id,
                 text=f"Thanks for leaving {chat.title}.\n\nYou have been debited with 2 credits.",
             )
-            
+
     raise ContinuePropagation

@@ -9,7 +9,6 @@ from bot.utils import add_new_user, check_spam_for_link
 
 
 @Client.on_chat_join_request()
-@main_channel_filter
 async def new_chat_member_main(app: Client, message: types.ChatJoinRequest):
 
     invite_link = message.invite_link.invite_link
