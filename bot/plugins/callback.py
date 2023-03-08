@@ -185,7 +185,7 @@ async def create_giveaway_func(app: Client, message: types.CallbackQuery):
         break
 
     join_channel = True
-    channel_id = bot_config_db.get_config()["main_channel"] or None
+    channel_id = bot_config_db.get_bot_config()["main_channel"] or None
     if not channel_id:
         join_channel = False
 
