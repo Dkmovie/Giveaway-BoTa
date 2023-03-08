@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import random
-
+from urllib.parse import quote_plus
+from pyrogram.types import InlineKeyboardMarkup as Markup, InlineKeyboardButton as Button
 import pytz
 from bot.config import Config
 from bot.database import user_db, invite_links, giveaway_db, admin_db
@@ -34,17 +35,28 @@ async def revoke_channel_ref_link(app: Client, channel_id, invite_link):
 
 
 async def get_user_text(user):
-    
-    ref_code = f"https://t.me/{Config.BOT_USERNAME}?start=ref_{user['referral']['referral_code']}"
-    # share_text = f"**Share status**: \n- Shared to contacts: {len(user['share_status']['shared_to_contacts'])}\n- Shared to groups: {len(user['share_status']['shared_to_groups'])}\n- Users joined: {len(user['share_status']['users_joined'])}\n- Joined channels: {len(user['share_status']['joined_channels'])}\n"
 
-    share_text = f"**Share status**: \nUsers Joined through your channel link: {len(user['share_status'].get('users_joined', []))}\n"
-    return f"👋 Hey there, here's the information for user **{user['user_id']}**:\n\n💰 **Credits**: {user['credits']}\n\n🚫 **Ban status**: {user['ban_status']['is_banned']}. Reason: {user['ban_status']['reason'] or 'N/A'}. Ban time: {user['ban_status']['ban_time'] or 'N/A'}\n\n💸 **Payment method**: {user['payment']['payment_method'] or 'N/A'}. Payment address: {user['payment']['payment_address'] or 'N/A'}\n\n👥 **Referral program**: \n- Channel referral link: {user['referral']['channel_ref_link'] or 'N/A'}\n- Referred by: {user['referral']['referred_by'] or 'N/A'}\n- Referral code: {ref_code}\n\n{share_text}"
+    user_id = user["user_id"]
+    credits = user["credits"]
+    payments = f'{user["payment"]["payment_method"]} - {user["payment"]["payment_address"]}' if user["payment"]["payment_method"] else "Not Set"
+    referal_link = user["referral"]["channel_ref_link"]
+
+    try:
+        users_joined = len(user["share_status"]["users_joined"])
+    except KeyError:
+        users_joined = 0
+
+    text = "Hey there! Here is your account details:\n\n"
+    text += f"**User ID:** `{user_id}`\n"
+    text += f"**Credits:** `{credits}`\n"
+    text += f"**Payments:** `{payments}`\n"
+    text += f"**Referral Link:** `{referal_link}`\n"
+    text += f"**Users Joined:** `{users_joined}`\n"
+    return text
 
 
 async def is_default(text):
     return text in ["default", "Default", "/default", "Default"]
-
 
 
 async def check_spam_for_link(link, num_users=50, time_limit=1):
@@ -69,22 +81,21 @@ async def check_spam_for_link(link, num_users=50, time_limit=1):
     return False
 
 
-
 async def peroidic_check(app):
     giveaways = await giveaway_db.get_giveaways()
-    admins = await  admin_db.get_admins()
+    admins = await admin_db.get_admins()
     for giveaway in giveaways:
         ist = pytz.timezone('Asia/Kolkata')
         now_ist = datetime.now(ist)
-        
-        giveaway['end_time'] =  utc_to_ist(giveaway['end_time'])
+
+        giveaway['end_time'] = utc_to_ist(giveaway['end_time'])
         giveaway['start_time'] = utc_to_ist(giveaway['start_time'])
 
         if not giveaway["published"] and giveaway['start_time'] <= now_ist and giveaway['end_time'] >= now_ist:
             await giveaway_db.update_giveaway(giveaway["giveaway_id"], {"published": True})
             for admin in admins:
                 await app.send_message(admin["user_id"], f"A giveaway is going to start soon. Please check the giveaway channel, check the giveaway `/giveaway {giveaway['giveaway_id']}`")
-        
+
         elif giveaway["published"] and giveaway['end_time'] <= now_ist and giveaway['start_time'] <= now_ist:
             for admin in admins:
                 await app.send_message(admin["user_id"], f"A giveaway has ended. Please check the giveaway channel, check the giveaway `/giveaway {giveaway['giveaway_id']}`")
@@ -113,6 +124,7 @@ async def peroidic_check(app):
 
             await giveaway_db.update_giveaway(giveaway_id=giveaway["giveaway_id"], data={"end_time": datetime.now(ist), "published": False, "winners": winners})
 
+
 def utc_to_ist(utc_time):
     utc_time = pytz.utc.localize(utc_time)
     return utc_time.astimezone(pytz.timezone('Asia/Kolkata'))
@@ -127,5 +139,35 @@ async def get_winner_text(giveaway_id, app):
     for winner in winners:
         user = await app.get_users(winner)
         text += f"- {user.mention}\n"
-    
+
     return text
+
+
+async def get_share_button(url):
+    url = quote_plus(url)
+    return [
+        [
+            Button(
+                "Share on Facebook",
+                url=f"https://www.facebook.com/sharer.php?u={url}",
+            ),
+            Button(
+                "Share on Twitter",
+                url=f"https://twitter.com/intent/tweet?url={url}",
+            ),
+            Button(
+                "Share on LinkedIn",
+                url=f"https://www.linkedin.com/shareArticle?url={url}",
+            ),
+        ],
+        [
+            Button(
+                "Share on Reddit", url=f"https://reddit.com/submit?url={url}"
+            ),
+            Button(
+                "Share on Pinterest",
+                url=f"https://pinterest.com/pin/create/button/?url={url}",
+            ),
+            Button("Share on WhatsApp", url=f"https://wa.me/?text={url}"),
+        ],
+    ]

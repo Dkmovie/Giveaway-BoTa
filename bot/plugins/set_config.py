@@ -9,8 +9,7 @@ from bot.plugins.filters import make_m
 @Client.on_callback_query(filters.regex("bot_config"))
 @make_m
 async def set_config(_: Client, message: Message):
-    data = ['referral_credits', 'backup_channel', 'main_channel', 'start_message', 'help_message', 'about_message', 'earn_credits_message',
-            'referral_message', 'withdraw_message', 'min_withdraw_amount', 'max_withdraw_amount', 'payment_methods', 'remove_payment_method']
+    data = ['referral_credits', 'backup_channel', 'main_channel', 'start_message', 'help_message', 'about_message', 'earn_credits_message', 'withdraw_message', 'min_withdraw_amount', 'max_withdraw_amount', 'payment_methods', 'remove_payment_method']
 
     bot_config = await bot_db.get_bot_config()
 

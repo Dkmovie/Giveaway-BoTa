@@ -19,19 +19,19 @@ async def raw_update_handler(bot, update, user, chat):
             and (update.invite or update.new_participant)
             and not user["share_status"]["joined_channels"].get(str(chat_id))
         ):
-            await user_db.update_user(user_id, {"credits": 1}, tag="inc")
-            await user_db.update_user(user_id, {"share_status": {"joined_channels": {str(chat_id): True}}}, tag="set")
+            await user_db.update_user(user_id, {"credits": 2}, tag="inc")
+            await user_db.update_user(user_id, {"share_status.joined_channels":  {str(chat_id): True}}, tag="set")
             await bot.send_message(
                 chat_id=user_id,
-                text=f"Thanks for joining {chat.title}.\n\nYou have been credited with 1 credit.",
+                text=f"Thanks for joining {chat.title}.\n\nYou have been credited with 2 credits.",
             )
 
         elif (chat_id == bot_config["backup_channel"] and (update.prev_participant)):
-            await user_db.update_user(user_id, {"credits": -1}, tag="inc")
-            await user_db.update_user(user_id, {"share_status": {"joined_channels": {str(chat_id): False}}}, tag="set")
+            await user_db.update_user(user_id, {"credits": -2}, tag="inc")
+            await user_db.update_user(user_id, {"share_status.joined_channels": {str(chat_id): False}}, tag="set")
             await bot.send_message(
                 chat_id=user_id,
-                text=f"Thanks for leaving {chat.title}.\n\nYou have been debited with 1 credit.",
+                text=f"Thanks for leaving {chat.title}.\n\nYou have been debited with 2 credits.",
             )
             
     raise ContinuePropagation

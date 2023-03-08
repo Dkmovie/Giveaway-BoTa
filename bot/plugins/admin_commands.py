@@ -1,3 +1,4 @@
+import contextlib
 from datetime import datetime
 from pyrogram import Client, filters
 from pyrogram.types import (
@@ -10,7 +11,7 @@ import pytz
 from bot.config import Config
 from bot.database import user_db, admin_db, giveaway_db
 from bot.plugins.filters import make_m
-from bot.utils import cancel_process, get_user_text, utc_to_ist
+from bot.utils import get_user_text, utc_to_ist
 from bot.plugins.filters import admin_filter
 
 
@@ -22,16 +23,6 @@ async def dashboard(app, message: Message):
     total_admins = await admin_db.get_admin_count()
     total_giveaways = await giveaway_db.get_giveaway_count()
 
-    buttons = {
-        "Ban List": "banlist",
-        "Admin List": "adminlist",
-        "Giveaway List": "list_giveaways",
-        "Bot Config": "bot_config",
-    }
-
-    buttons = Markup(
-        [[Button(text, callback_data=f"{data}")] for text, data in buttons.items()]
-    )
     await message.reply_text(
         f"Total Users: {total_users}\n"
         f"Total Banned Users: {total_banned}\n"
@@ -46,14 +37,23 @@ async def dashboard(app, message: Message):
         f"/giveaway - The info of the giveaway\n"
         f"/delete_giveaway - Cancel a giveaway\n"
         f"/users - The list of users in bot database\n"
-        f"/user - The info of a user\n",
-        reply_markup=buttons,
+        f"/user - The info of a user\n"
+        f"/giveaways - The list of giveaways in bot database\n"
+        f"/set_config - The bot config\n"
+        f"/banlist - The list of banned users\n"
+        f"/adminlist - The list of admins\n",
     )
 
 
-@Client.on_message(filters.command("ban"))
+@Client.on_message(filters.command("ban") & filters.private)
+@Client.on_callback_query(filters.regex("^ban#"))
 @admin_filter
 async def ban(app, message: Message):
+
+    if isinstance(message, CallbackQuery):
+        user_id = message.data.split("#")[1]
+        message = message.message
+        message.command = ["ban", user_id]
 
     if len(message.command) < 2:
         ban_text = "Please give me the user id of the user you want to ban., example: /ban 1234567890 reason"
@@ -85,8 +85,16 @@ async def ban(app, message: Message):
 
 
 @Client.on_message(filters.command("unban"))
+@Client.on_callback_query(filters.regex("^unban"))
 @admin_filter
 async def unban(app, message: Message):
+
+    if isinstance(message, CallbackQuery):
+        user_id = message.data.split("#")[1]
+        message = message.message
+        message.command = ["unban", user_id]
+
+
     if len(message.command) < 2:
         await message.reply_text(
             "Please give me the user id of the user you want to unban., example: /unban 1234567890"
@@ -112,8 +120,6 @@ async def unban(app, message: Message):
 
 
 @Client.on_message(filters.command("banlist"))
-@Client.on_callback_query(filters.regex("banlist"))
-@make_m
 @admin_filter
 async def banlist(app, message: Message):
     banlist = await user_db.get_banlist()
@@ -151,7 +157,6 @@ async def totalbanned(app, message: Message):
 
 
 @Client.on_message(filters.command("totaladmins"))
-@make_m
 @admin_filter
 async def totaladmins(app, message: Message):
     total_admins = await admin_db.get_admin_count()
@@ -159,7 +164,8 @@ async def totaladmins(app, message: Message):
 
 
 @Client.on_message(
-    filters.command("addadmin") & filters.private & filters.user(Config.OWNER_ID)
+    filters.command("addadmin") & filters.private & filters.user(
+        Config.OWNER_ID)
 )
 async def addadmin(app, message: Message):
     if len(message.command) < 2:
@@ -212,7 +218,6 @@ async def removeadmin(app, message: Message):
 
 
 @Client.on_message(filters.command("adminlist") & filters.private)
-@Client.on_callback_query(filters.regex("adminlist"))
 @admin_filter
 async def adminlist(app, message: Message):
     adminlist = await admin_db.get_admins()
@@ -228,7 +233,7 @@ async def adminlist(app, message: Message):
             await message.reply_text(adminlist_text)
             adminlist_text = ""
 
-    await message.message.reply_text(adminlist_text)
+    await message.reply_text(adminlist_text)
 
 
 @Client.on_message(filters.command("create_giveaway") & filters.private)
@@ -239,16 +244,15 @@ async def create_giveaway_cmd(app, message: Message):
     await message.reply_text(
         text,
         reply_markup=Markup(
-            [[Button("Start", "create_giveaway")], [Button("Cancel", "cancel")]]
+            [[Button("Start", "create_giveaway")],
+             [Button("Cancel", "cancel")]]
         ),
     )
 
 
 # see a list of all the giveaways
 @Client.on_message(filters.command("giveaways") & filters.private)
-@Client.on_callback_query(filters.regex("list_giveaways"))
 @admin_filter
-@make_m
 async def giveaways(app, message: CallbackQuery):
     giveaways = await giveaway_db.get_giveaways()
     if not giveaways:
@@ -257,13 +261,13 @@ async def giveaways(app, message: CallbackQuery):
 
     giveaways_text = "Here is the list of giveaways:\n\n"
     for giveaway in giveaways:
-        giveaways_text += f"Giveaway ID: `{giveaway['giveaway_id']}`\n"
+        giveaways_text += f"Giveaway ID: `{giveaway['giveaway_id']}` - {giveaway['heading']} - Active: {giveaway['published']}\n"
 
         if len(giveaways_text) > 4096:
             await message.reply_text(giveaways_text)
             giveaways_text = ""
 
-    await message.message.reply_text(giveaways_text)
+    await message.reply_text(giveaways_text)
 
 
 # get info about a giveaway
@@ -282,7 +286,7 @@ async def giveaway(app, message: Message):
     if not giveaway:
         await message.reply_text("There is no giveaway with that id in the database.")
         return
-    
+
     giveaway['start_time'] = utc_to_ist(giveaway['start_time'])
     giveaway['end_time'] = utc_to_ist(giveaway['end_time'])
 
@@ -330,20 +334,22 @@ async def giveaway(app, message: Message):
         else:
             giveaway_text += f"Giveaway Status: `Not Published`\n"
             buttons.append(
-                [Button("Publish", callback_data=f"start_giveaway_{giveaway_id}")]
+                [Button(
+                    "Publish", callback_data=f"start_giveaway_{giveaway_id}")]
             )
 
         buttons.append(
             [
-                Button("❌ Cancel", callback_data=f"cancel_giveaway_{giveaway_id}"),
+                Button(
+                    "❌ Cancel", callback_data=f"cancel_giveaway_{giveaway_id}"),
             ]
         )
 
     else:
         giveaway_text += f"Giveaway Status: `Ended`\n"
-        buttons.append(                    [
-                        Button("📣 Share", switch_inline_query=giveaway_id),
-                    ],)
+        buttons.append([
+            Button("📣 Share Winners", switch_inline_query=giveaway_id),
+        ],)
 
     markup = Markup(buttons) if buttons else None
 
@@ -380,7 +386,7 @@ async def delete_giveaway(app, message: Message):
 @Client.on_message(filters.command("users") & filters.private)
 @make_m
 @admin_filter
-async def users(app, message: Message):
+async def users(app: Client, message: Message):
     users = await user_db.get_all_users()
     if not users:
         await message.reply_text("There are no users in the database.")
@@ -388,7 +394,9 @@ async def users(app, message: Message):
 
     users_text = "Here is the list of users:\n\n"
     for user in users:
-        users_text += f"- `{user['user_id']}`\n"
+        with contextlib.suppress(Exception):
+            tg_user = await app.get_users(user["user_id"])
+            users_text += f"- `{user['user_id']}` - {tg_user.mention} - `{user['credits']}`\n"
 
         if len(users_text) > 4096:
             await message.reply_text(users_text)
@@ -414,56 +422,22 @@ async def user(app, message: Message):
         await message.reply_text("There is no user with that id in the database.")
         return
 
+    buttons = [
+        [Button("Edit Credits", f"edit_credits#{user_id}")],
+        [Button("Reset Credits to 0", f"reset_credits#{user_id}")],
+        [Button("Remove Payment method", f"remove_payment_method#{user_id}")],
+        [Button("Ban", f"ban#{user_id}"), Button("Unban", f"unban#{user_id}")],
+        [Button("Delete User", f"delete_user#{user_id}")],
+    ]
+
     reply_markup = Markup(
-        [
-            [Button("Edit Credits", f"edit_credits#{user_id}")],
-            [Button("Delete User", f"delete_user#{user_id}")],
-        ]
+        buttons
     )
 
     text = await get_user_text(user)
     await message.reply_text(text, reply_markup=reply_markup)
 
 
-# edit credits of a user
-@Client.on_callback_query(filters.regex("edit_credits"))
-@admin_filter
-async def edit_credits(app, message):
 
-    user_id = int(message.data.split("#")[1])
-    message = message.message
-    user = await user_db.get_user(user_id)
-    if not user:
-        await message.message.reply_text(
-            "There is no user with that id in the database."
-        )
-        return
 
-    while True:
-        credits_text = await message.chat.ask(
-            "Send the new credits for the user", filters=filters.text, timeout=60
-        )
 
-        if not credits_text:
-            return await message.reply_text("You didn't reply in time.", quote=True)
-
-        user_credits = credits_text.text
-
-        if await cancel_process(user_credits):
-            return await message.reply_text("Cancelled.", quote=True)
-
-        if not user_credits.isnumeric():
-            await message.reply_text("Please give me a number.", quote=True)
-            continue
-
-        user_credits = int(user_credits)
-
-        break
-
-    await user_db.update_user(user_id, {"credits": user_credits})
-
-    await message.reply_text(f"Updated credits for user {user_id} to {user_credits}.")
-
-    await app.send_message(
-        user_id, f"Your credits have been updated to {user_credits} by admin."
-    )

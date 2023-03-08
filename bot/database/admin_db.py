@@ -16,7 +16,7 @@ class Admin:
         return await self.admin_db.insert_one({"user_id": int(user_id)})
 
     async def remove_admin(self, user_id: int):
-        return await self.admin_db.delete_one({"user_id": int(user_id)})
+        return await self.admin_db.delete_one({"user_id": user_id})
 
     async def get_admins(self):
         return await self.admin_db.find().to_list(None)

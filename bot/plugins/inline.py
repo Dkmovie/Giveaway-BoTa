@@ -67,7 +67,7 @@ async def inline(app: Client, query: InlineQuery):
     else:
         join_channel_text = ""
 
-    text = f"**{giveaway['heading']}**\n\n{giveaway['body']}\n\n**Total Participants:** {giveaway['total_participants']}\n**Total Winners:** {giveaway['total_winners']}\n**Credits:** {giveaway['credits']}\n**Ends at:** {remaining_time}"
+    text = f"**{giveaway['heading']}**\n\n{giveaway['body']}\n\n**Total Participants:** {giveaway['total_participants']}\n**Total Winners:** {giveaway['total_winners']}"
     text += join_channel_text
     button_text = giveaway["button_text"]
     reply_markup = InlineKeyboardMarkup(
