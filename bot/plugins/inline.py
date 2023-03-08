@@ -58,11 +58,9 @@ async def inline(app: Client, query: InlineQuery):
             cache_time=cache_time
         )
 
-    remaining_time = giveaway['end_time']
-
     if giveaway["join_channel"] and giveaway['channel_id']:
         channel = await app.get_chat(giveaway['channel_id'])
-        channel_link = f"@{channel.username}" if  channel.username else f"[{channel.title}]({channel.invite_link})"
+        channel_link = f"@{channel.username}" if channel.username else f"[{channel.title}]({channel.invite_link})"
         join_channel_text = f"\n\nJoin Channel -  {channel_link}"
     else:
         join_channel_text = ""
