@@ -26,10 +26,10 @@ async def new_chat_member_main(app: Client, message: types.ChatJoinRequest):
 
         if is_spam:
             await app.send_message(user_referred['user_id'], "Your link have been seemed spaming by our system, so we have revoked your link, create a new link and share it to your friends.")
-            await user_db.update_user(user_referred['user_id'], {"referral.channel_ref_link": None}, tag="set")
-            await invite_links.delete_link(invite_link)
-            await app.revoke_chat_invite_link(chat_id=bot_config["main_channel"], invite_link=invite_link)
-            await app.send_message(Config.LOG_CHANNEL, f"**{user_referred['user_id']}**'s link have been revoked due to spamming.")
+            # await user_db.update_user(user_referred['user_id'], {"referral.channel_ref_link": None}, tag="set")
+            # await invite_links.delete_link(invite_link)
+            # await app.revoke_chat_invite_link(chat_id=bot_config["main_channel"], invite_link=invite_link)
+            await app.send_message(Config.LOG_CHANNEL, f"**{user_referred['user_id']}**'s link have been found spamming.")
             return
         
         if user_referred['user_id'] == user_joined:

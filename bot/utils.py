@@ -143,31 +143,7 @@ async def get_winner_text(giveaway_id, app):
     return text
 
 
-async def get_share_button(url):
-    url = quote_plus(url)
-    return [
-        [
-            Button(
-                "Share on Facebook",
-                url=f"https://www.facebook.com/sharer.php?u={url}",
-            ),
-            Button(
-                "Share on Twitter",
-                url=f"https://twitter.com/intent/tweet?url={url}",
-            ),
-            Button(
-                "Share on LinkedIn",
-                url=f"https://www.linkedin.com/shareArticle?url={url}",
-            ),
-        ],
-        [
-            Button(
-                "Share on Reddit", url=f"https://reddit.com/submit?url={url}"
-            ),
-            Button(
-                "Share on Pinterest",
-                url=f"https://pinterest.com/pin/create/button/?url={url}",
-            ),
-            Button("Share on WhatsApp", url=f"https://wa.me/?text={url}"),
-        ],
-    ]
+async def broadcast_owners(func, *args, **kwargs):
+    owners = Config.ADMINS
+    for owner in owners:
+        await func(owner, *args, **kwargs)

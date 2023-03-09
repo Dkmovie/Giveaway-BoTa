@@ -94,7 +94,6 @@ async def unban(app, message: Message):
         message = message.message
         message.command = ["unban", user_id]
 
-
     if len(message.command) < 2:
         await message.reply_text(
             "Please give me the user id of the user you want to unban., example: /unban 1234567890"
@@ -227,7 +226,8 @@ async def adminlist(app, message: Message):
 
     adminlist_text = "Here is the list of admins:\n\n"
     for admin in adminlist:
-        adminlist_text += f"- {admin['user_id']}\n"
+        tg_admin = await app.get_users(admin["user_id"])
+        adminlist_text += f"- {admin['user_id']} - {tg_admin.mention}\n"
 
         if len(adminlist_text) > 4096:
             await message.reply_text(adminlist_text)
@@ -437,7 +437,28 @@ async def user(app, message: Message):
     text = await get_user_text(user)
     await message.reply_text(text, reply_markup=reply_markup)
 
+@Client.on_message(filters.command("give_all") & filters.private)
+@admin_filter
+async def give_all(app, message: Message):
+    """Give all users credits"""
+    if len(message.command) < 2:
+        await message.reply_text(
+            "Please give me the credits you want to give to all users., example: /give_all 100"
+        )
+        return
 
+    credits = message.command[1]
+    try:
+        credits = int(credits)
+    except ValueError:
+        await message.reply_text("Credits must be an integer.")
+        return
 
+    users = await user_db.get_all_users()
+    if not users:
+        await message.reply_text("There are no users in the database.")
+        return
 
-
+    # update all users credits at once
+    await user_db.update_all_users_credits(credits)
+    await message.reply_text(f"Added {credits} credits to all users.")

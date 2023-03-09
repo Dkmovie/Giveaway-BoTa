@@ -58,15 +58,8 @@ async def inline(app: Client, query: InlineQuery):
             cache_time=cache_time
         )
 
-    if giveaway["join_channel"] and giveaway['channel_id']:
-        channel = await app.get_chat(giveaway['channel_id'])
-        channel_link = f"@{channel.username}" if channel.username else f"[{channel.title}]({channel.invite_link})"
-        join_channel_text = f"\n\nJoin Channel -  {channel_link}"
-    else:
-        join_channel_text = ""
+    text = f"**{giveaway['heading']}**\n\n{giveaway['body']}\n\n**Total Participants Joined:** {len(giveaway['participants'])}\n**Total Winners:** {giveaway['total_winners']}"
 
-    text = f"**{giveaway['heading']}**\n\n{giveaway['body']}\n\n**Total Participants:** {giveaway['total_participants']}\n**Total Winners:** {giveaway['total_winners']}"
-    text += join_channel_text
     button_text = giveaway["button_text"]
     reply_markup = InlineKeyboardMarkup(
         [

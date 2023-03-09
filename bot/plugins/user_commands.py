@@ -96,8 +96,10 @@ async def start(app: Client, message: Message | types.CallbackQuery):
 
 @Client.on_callback_query(filters.regex("help"))
 async def help(app: Client, message: CallbackQuery):
-    owner = await app.get_users(Config.OWNER_ID)
-    text = f"Contact {owner.mention} for help."
+    text = f"Contact admins for help.\n\n"
+    for owner in Config.ADMINS:
+        owner = await app.get_users(owner)
+        text += f"- {owner.mention}\n"
     await message.message.reply_text(text)
 
 

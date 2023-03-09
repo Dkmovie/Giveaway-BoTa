@@ -158,5 +158,12 @@ class User:
         return await self.users.count_documents({"ban_status.is_banned": True})
     
 
+    async def update_all_users_credits(self, amount):
+        """
+        It updates the credits of all the users in the database
 
+        :param amount: The amount of credits to be added to all the users
+        """
+        await self.users.update_many({}, {"$inc": {"credits": amount}})
+        
 user_db = User(Config.DATABASE_URL, Config.DATABASE_NAME)

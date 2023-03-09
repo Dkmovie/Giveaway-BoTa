@@ -6,9 +6,9 @@ from pyrogram import Client, filters, types
 import pytz
 from pyrogram.errors import UserNotParticipant
 from bot.config import Config
-from bot.database import user_db, bot_db as bot_config_db, invite_links
+from bot.database import user_db, bot_db as bot_config_db
 from bot.plugins.filters import admin_filter
-from bot.utils import add_new_user, cancel_process, generate_channel_ref_link, get_share_button, is_default, revoke_channel_ref_link, utc_to_ist
+from bot.utils import add_new_user, broadcast_owners, cancel_process, generate_channel_ref_link, is_default, revoke_channel_ref_link, utc_to_ist
 from bot.database.admin_db import giveaway_db
 from pyrogram.types import Message, InlineKeyboardMarkup as Markup, InlineKeyboardButton as Button
 
@@ -98,7 +98,7 @@ async def create_giveaway_func(app: Client, message: types.CallbackQuery):
         break
 
     while True:
-        start_time = await message.chat.ask("When should the giveaway start? (Give me  24 hours format)\nFormat: 12:00 12-02-2022\n/default", filters=filters.text, timeout=3600)
+        start_time = await message.chat.ask("When should the giveaway start? (Give me  24 hours format)\nFormat: 12:00 12-02-2022\n/default - 24 hours from now", filters=filters.text, timeout=3600)
 
         if not start_time:
             return await message.reply_text("You didn't reply in time.", quote=True)
@@ -107,12 +107,12 @@ async def create_giveaway_func(app: Client, message: types.CallbackQuery):
 
         if await cancel_process(start_time):
             return await message.reply_text("Cancelled.", quote=True)
-        
+
         ist = pytz.timezone('Asia/Kolkata')
         now_ist = datetime.now(ist)
 
         if await is_default(start_time):
-            start_time = now_ist
+            start_time = now_ist + timedelta(hours=24)
             break
 
         try:
@@ -130,7 +130,7 @@ async def create_giveaway_func(app: Client, message: types.CallbackQuery):
         break
 
     while True:
-        duration = await message.chat.ask("When should the giveaway end? (Give me  24 hours format)", filters=filters.text, timeout=3600)
+        duration = await message.chat.ask("When should the giveaway end? (Give me  24 hours format)\n/default - 24 hours from start time", filters=filters.text, timeout=3600)
 
         if not duration:
             return await message.reply_text("You didn't reply in time.", quote=True)
@@ -142,6 +142,10 @@ async def create_giveaway_func(app: Client, message: types.CallbackQuery):
 
         ist = pytz.timezone('Asia/Kolkata')
         now_ist = datetime.now(ist)
+
+        if await is_default(duration):
+            end_time = start_time + timedelta(hours=24)
+            break
 
         try:
             end_time = datetime.strptime(duration, "%H:%M %d-%m-%Y")
@@ -343,11 +347,12 @@ async def raffle(app, callback_query: types.CallbackQuery):
         return await callback_query.message.edit_text(
             text=callback_query.message.text + "\n\n**Not enough participants.**"
         )
-
-    for _ in range(len(participants)):
+    excluded_winners = await giveaway_db.get_5_last_ended_giveaway_winners()
+    while len(winners) < giveaway["total_winners"] and len(participants) > 0:
         winner = random.choice(participants)
-        winners.append(winner)
-        participants.remove(winner)
+        if winner not in excluded_winners or len(participants) <= giveaway["total_winners"] - len(winners):
+            winners.append(winner)
+            participants.remove(winner)
 
     if not winners:
         text = callback_query.message.text + "\n\n**No one won the giveaway.**"
@@ -394,7 +399,7 @@ async def earn(app: Client, callback_query: types.CallbackQuery):
         main_channel = main_channel.invite_link
 
     backup_channel = None
-        
+
     if bot_config["backup_channel"]:
         backup_channel = await app.get_chat(bot_config["backup_channel"])
 
@@ -402,7 +407,6 @@ async def earn(app: Client, callback_query: types.CallbackQuery):
             backup_channel = f"@{backup_channel.username}"
         else:
             backup_channel = backup_channel.invite_link
-
 
     main_text = ""
 
@@ -421,7 +425,7 @@ Copy - 🔗 `{main_channel}`
 """
 
     text += bot_config["message"]["earn_credits_message"]
-    share_buttons = await get_share_button(main_channel)
+
     await callback_query.edit_message_text(
         text=text,
         reply_markup=Markup(
@@ -433,7 +437,7 @@ Copy - 🔗 `{main_channel}`
                 # [
                 #     Button("Refer your friend", callback_data="referral_link"),
                 # ],
-            ] + share_buttons +
+            ] +
             [
                 [
                     Button("Back", callback_data="start"),
@@ -533,7 +537,7 @@ async def generate_channel_ref_link_cb(app: Client, callback_query: types.Callba
             [
                 [Button("Share channel referral link",
                         url=f"tg://msg_url?url={ref_link}")],
-            ] + await get_share_button(ref_link) + [[Button("Back", callback_data="start")]],
+            ] + [[Button("Back", callback_data="start")]],
         )
     )
 
@@ -599,17 +603,14 @@ async def withdraw_credits_yes(app, callback_query: types.CallbackQuery):
             [Button(
                 "Approve", callback_data=f"approve_withdraw_{callback_query.from_user.id}_{user['credits']}")],
             [Button(
-                "Return", callback_data=f"return_withdraw_{callback_query.from_user.id}_{user['credits']}")],
-            [Button(
-                "Cancel", callback_data=f"cancel_withdraw_{callback_query.from_user.id}")],
+                "Reject", callback_data=f"return_withdraw_{callback_query.from_user.id}_{user['credits']}")],
         ]
     )
 
-    await app.send_message(
-        chat_id=Config.OWNER_ID,
-        text=f"User {callback_query.from_user.id} - {callback_query.from_user.mention} has withdrawn {user['credits']} credits.\n\nPayment Method: {user['payment']['payment_method']}\nPayment Address: {user['payment']['payment_address']}",
-        reply_markup=keyb,
-
+    await broadcast_owners(
+        app.send_message,
+        text=f"User {callback_query.from_user.id} - {callback_query.from_user.mention} has requested to withdraw {user['credits']} credits.\n\nPayment Method: {user['payment']['payment_method']}\nPayment Address: {user['payment']['payment_address']}",
+        reply_markup=keyb
     )
 
     await callback_query.message.reply(
@@ -678,10 +679,10 @@ async def set_payment_id(app, callback_query: types.CallbackQuery):
     )
 
     await callback_query.message.reply(
-        text="Your payment method and payment address have been set.",
+        text="Your payment method and payment address have been updated.",
         reply_markup=Markup(
             [
-                [Button("Withdraw", callback_data="withdraw")],
+                [Button("Confirm Withdraw", callback_data="withdraw_credits")],
                 [Button("Back", callback_data="start")],
             ]
         ),)
@@ -735,9 +736,14 @@ async def return_withdraw(app, callback_query: types.CallbackQuery):
 
     await callback_query.answer()
 
+    text = f"Your payment of {credits} credits has been returned to your account. Contact admins for help\n\n"
+    for owner in Config.ADMINS:
+        owner = await app.get_users(owner)
+        text += f"- {owner.mention}\n"
+
     await app.send_message(
         chat_id=user_id,
-        text=f"Your payment of {credits} credits has been returned to your account.",
+        text=text,
     )
 
     await app.send_message(
@@ -849,6 +855,25 @@ async def participate(app, callback_query: types.CallbackQuery):
     await callback_query.answer(
         f"You have successfully participated in this giveaway, you have been charged {giveaway['credits']} credits.", show_alert=True
     )
+    text = f"**{giveaway['heading']}**\n\n{giveaway['body']}\n\n**Total Participants Joined:** {len(giveaway['participants'])+1}\n**Total Winners:** {giveaway['total_winners']}"
+    button_text = giveaway["button_text"]
+
+    reply_markup = Markup(
+        [
+            [
+                Button(
+                    text=f'{button_text} - {giveaway["credits"]} Credit', callback_data=f'participate_{giveaway["giveaway_id"]}'
+                )
+            ],
+            [
+                Button(
+                    text="Earn Credits", url=f"https://t.me/{app.raw_username}?start=earn_credits"
+                )
+            ]
+        ]
+    )
+
+    await callback_query.edit_message_text(text=text, reply_markup=reply_markup)
 
     await app.send_message(
         chat_id=Config.LOG_CHANNEL,
@@ -918,6 +943,7 @@ async def edit_credits(app, message):
     await app.send_message(
         user_id, f"Your credits have been updated to {user_credits} by admin."
     )
+
 
 @Client.on_callback_query(filters.regex("delete_user"))
 @admin_filter

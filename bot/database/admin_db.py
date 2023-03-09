@@ -1,4 +1,7 @@
+from datetime import datetime
 import time
+
+import pytz
 from bot.config import Config
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -116,6 +119,18 @@ class Giveaway:
 
     async def delete_giveaway(self, giveaway_id: int):
         return await self.giveaway_db.delete_one({"giveaway_id": giveaway_id})
-    
+
+    async def get_5_last_ended_giveaway_winners(self) -> list:
+        ist = pytz.timezone('Asia/Kolkata')
+        now = datetime.now(ist)
+        winners = set()
+        ended_giveaways = await self.giveaway_db.find({"end_time": {"$lt": now}}, {"winners": 1}).sort("end_time", -1).limit(5).to_list(None)
+
+        for giveaway in ended_giveaways:
+            winners.update(giveaway.get("winners", []))
+
+        return list(winners)
+
+
 admin_db = Admin(Config.DATABASE_URL, Config.DATABASE_NAME)
 giveaway_db = Giveaway(Config.DATABASE_URL, Config.DATABASE_NAME)
