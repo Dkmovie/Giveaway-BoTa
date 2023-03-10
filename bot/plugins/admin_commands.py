@@ -41,7 +41,8 @@ async def dashboard(app, message: Message):
         f"/giveaways - The list of giveaways in bot database\n"
         f"/set_config - The bot config\n"
         f"/banlist - The list of banned users\n"
-        f"/adminlist - The list of admins\n",
+        f"/adminlist - The list of admins\n"
+        f"/give_all - Give creidts to all the users in the bot database\n"
     )
 
 
@@ -255,13 +256,15 @@ async def create_giveaway_cmd(app, message: Message):
 @admin_filter
 async def giveaways(app, message: CallbackQuery):
     giveaways = await giveaway_db.get_giveaways()
+
     if not giveaways:
         await message.reply_text("There are no giveaways in the database.")
         return
 
     giveaways_text = "Here is the list of giveaways:\n\n"
-    for giveaway in giveaways:
-        giveaways_text += f"Giveaway ID: `{giveaway['giveaway_id']}` - {giveaway['heading']} - Active: {giveaway['published']}\n"
+    sorted_list = sorted(giveaways, key=lambda k: k['published'], reverse=True)
+    for giveaway in sorted_list:
+        giveaways_text += f"ID: `{giveaway['giveaway_id']}` - {giveaway['heading']} - Active: {giveaway['published']}\n"
 
         if len(giveaways_text) > 4096:
             await message.reply_text(giveaways_text)

@@ -39,6 +39,7 @@ class BotDatabase:
             "min_withdraw_amount": 50,
             "max_withdraw_amount": 50000,
             "payment_methods": [],
+            "credit_value": 1,
         }
         await self.config.insert_one(res)
 

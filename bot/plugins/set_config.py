@@ -9,7 +9,7 @@ from bot.plugins.filters import make_m
 @Client.on_callback_query(filters.regex("bot_config"))
 @make_m
 async def set_config(_: Client, message: Message):
-    data = ['referral_credits', 'backup_channel', 'main_channel', 'start_message', 'help_message', 'about_message', 'earn_credits_message', 'withdraw_message', 'min_withdraw_amount', 'max_withdraw_amount', 'payment_methods', 'remove_payment_method']
+    data = ['referral_credits', 'backup_channel', 'main_channel', 'start_message', 'help_message', 'about_message', 'earn_credits_message', 'withdraw_message', 'min_withdraw_amount', 'max_withdraw_amount', 'payment_methods', 'remove_payment_method', 'credit_value']
 
     bot_config = await bot_db.get_bot_config()
 
@@ -26,6 +26,7 @@ async def set_config(_: Client, message: Message):
     text += f"**Min withdraw amount:** {bot_config['min_withdraw_amount']}\n\n"
     text += f"**Max withdraw amount:** {bot_config['max_withdraw_amount']}\n\n"
     text += f"**Payment methods:** {', '.join(bot_config['payment_methods']) or None}\n\n"
+    text += f"**Credit value:** {bot_config['credit_value']} INR\n\n"
 
     buttons = []
     row = []
@@ -280,4 +281,25 @@ async def remove_payment_method(client: Client, message: Message):
 
             await bot_db.set_bot_config({"payment_methods": text.text}, tag="pull")
             await message.message.reply_text("Payment method removed")
+            break
+
+
+@Client.on_callback_query(filters.regex("^setm_credit_value$"))
+async def credit_value(client: Client, message):
+    while True:
+        if text := await message.message.chat.ask(
+            text="Send the new credit value in INR",
+            filters=filters.text,
+            timeout=60,
+        ):
+            try:
+                text = int(text.text)
+            except ValueError:
+                await message.message.reply_text("Invalid input, please send a valid number.")
+                continue
+            if text <= 0:
+                await message.message.reply_text("Invalid input, please send a valid number.")
+                continue
+            await bot_db.set_bot_config({"credit_value": text})
+            await message.message.reply_text("Credit value updated")
             break

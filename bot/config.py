@@ -36,3 +36,13 @@ class Config(object):
         (os.environ.get("BROADCAST_AS_COPY", "False")), False
     )
     WEB_SERVER = is_enabled(os.environ.get("WEB_SERVER", "False"), False)
+
+
+class Messages(object):
+    HEADING = "💰💰 Exciting news! We're having a ₹500 giveaway! 💰💰"
+    BODY = """👉 Just click on the 🎉 "Join Giveaway" 🎉 button to enter the giveaway!
+🎁 Giveaway Prize: ₹500 💰
+🕰️ Giveaway Ends On: 05:00 PM, 4th March, 2023 ⏰
+🤖 The bot will pick a random winner 🎊 and will announce it publicly! 📣
+"""
+    JOIN_TEXT_POPUP = "You need to Join @F11Sports to participate in the Giveaway"

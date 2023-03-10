@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta
 import random
+from urllib.parse import quote_plus
 from uuid import uuid4
 import humanize
 from pyrogram import Client, filters, types
 import pytz
 from pyrogram.errors import UserNotParticipant
-from bot.config import Config
+from bot.config import Config, Messages
 from bot.database import user_db, bot_db as bot_config_db
 from bot.plugins.filters import admin_filter
 from bot.utils import add_new_user, broadcast_owners, cancel_process, generate_channel_ref_link, is_default, revoke_channel_ref_link, utc_to_ist
@@ -19,17 +20,24 @@ async def create_giveaway_func(app: Client, message: types.CallbackQuery):
 
     message = message.message
 
-    text = await message.chat.ask("What is the heading of the giveaway?", filters=filters.text, timeout=3600)
+    text = await message.chat.ask(f"What is the heading of the giveaway? - /default\n{Messages.HEADING}", filters=filters.text, timeout=3600)
 
     if not text:
         return await message.reply_text("You didn't reply in time.", quote=True)
 
     if await cancel_process(text.text):
         return await message.reply_text("Cancelled.", quote=True)
+    
+    if len(text.text) > 255:
+        return await message.reply_text("The heading should be less than 255 characters.", quote=True)
+
 
     text = text.text.html
 
-    description: Message = await message.chat.ask("What is the description of the giveaway?", filters=filters.text, timeout=3600)
+    if await is_default(text):
+        text = Messages.HEADING
+
+    description: Message = await message.chat.ask(f"What is the description of the giveaway?- /default\n{Messages.BODY}", filters=filters.text, timeout=3600)
 
     if not description:
         return await message.reply_text("You didn't reply in time.", quote=True)
@@ -38,6 +46,9 @@ async def create_giveaway_func(app: Client, message: types.CallbackQuery):
         return await message.reply_text("Cancelled.", quote=True)
 
     description = description.text.html
+
+    if await is_default(description):
+        description = Messages.BODY
 
     while True:
         winners = await message.chat.ask("How many winners should there be? /default - 1", filters=filters.text, timeout=3600)
@@ -98,7 +109,7 @@ async def create_giveaway_func(app: Client, message: types.CallbackQuery):
         break
 
     while True:
-        start_time = await message.chat.ask("When should the giveaway start? (Give me  24 hours format)\nFormat: 12:00 12-02-2022\n/default - 24 hours from now", filters=filters.text, timeout=3600)
+        start_time = await message.chat.ask("When should the giveaway start? (Give me  24 hours format)\nFormat: 12:00 12-02-2022\n/default - 1 hour from now", filters=filters.text, timeout=3600)
 
         if not start_time:
             return await message.reply_text("You didn't reply in time.", quote=True)
@@ -112,7 +123,7 @@ async def create_giveaway_func(app: Client, message: types.CallbackQuery):
         now_ist = datetime.now(ist)
 
         if await is_default(start_time):
-            start_time = now_ist + timedelta(hours=24)
+            start_time = now_ist + timedelta(hours=1)
             break
 
         try:
@@ -194,7 +205,7 @@ async def create_giveaway_func(app: Client, message: types.CallbackQuery):
         join_channel = False
 
     while True:
-        button_text = await message.chat.ask("What should the button text be? /default - Join", filters=filters.text, timeout=3600)
+        button_text = await message.chat.ask("What should the button text be? /default - Join Giveaway", filters=filters.text, timeout=3600)
 
         if not button_text:
             return await message.reply_text("You didn't reply in time.", quote=True)
@@ -205,7 +216,7 @@ async def create_giveaway_func(app: Client, message: types.CallbackQuery):
             return await message.reply_text("Cancelled.", quote=True)
 
         if await is_default(button_text):
-            button_text = "Join"
+            button_text = "Join Giveaway"
 
         break
 
@@ -416,7 +427,7 @@ async def earn(app: Client, callback_query: types.CallbackQuery):
         except UserNotParticipant:
             main_text += f"\n- Join our backup channel {backup_channel} = 2 Credits\n"
 
-    text = f"""🎉🎉🎉 Here are some ways you can earn Credits 🎉🎉🎉
+    text = f"""🎉🎉🎉 Here are some ways you can Earn Credits 🎉🎉🎉
 {main_text}
 - Here's your unique link to our [main channel]({main_channel})
 
@@ -425,7 +436,7 @@ Copy - 🔗 `{main_channel}`
 """
 
     text += bot_config["message"]["earn_credits_message"]
-
+    share_url = f"https://telegran.me/share/url?url={quote_plus(main_channel)}"
     await callback_query.edit_message_text(
         text=text,
         reply_markup=Markup(
@@ -434,9 +445,9 @@ Copy - 🔗 `{main_channel}`
                     Button("Generate New Link - Doesn’t Affect Your Credits",
                            callback_data="generate_channel_ref_link"),
                 ],
-                # [
-                #     Button("Refer your friend", callback_data="referral_link"),
-                # ],
+                [
+                    Button("Refer your friend", url=share_url),
+                ],
             ] +
             [
                 [
@@ -450,11 +461,12 @@ Copy - 🔗 `{main_channel}`
 @Client.on_callback_query(filters.regex("^withdraw$"))
 async def withdraw(app, callback_query: types.CallbackQuery):
     bot_config = await bot_config_db.get_bot_config()
+    credit_value = bot_config["credit_value"]
     user = await user_db.get_user(user_id=callback_query.from_user.id)
     text = bot_config["message"]["withdraw_message"]
-    text += f"\n\n**Your Credit Balance Is - {user['credits']} Credits**"
+    text += f"\n\n**Your Credit Balance Is - {user['credits']} Credits, {user['credits'] * bot_config['credit_value']} INR**"
     text += f"\n**Minimum withdraw amount is {bot_config['min_withdraw_amount']}**"
-    text += f"\n**1 Credit = ₹1**"
+    text += f"\n**1 Credit = ₹{credit_value}**"
     text += f"\n**Your payment method is {user['payment']['payment_method']}**"
     text += f"\n**Your payment details are {user['payment']['payment_address']}**"
 
@@ -566,7 +578,7 @@ async def withdraw_credits(app, callback_query: types.CallbackQuery):
         await callback_query.answer("Please Add Payment Method", show_alert=True)
         return
 
-    text = f"Your balance is {user['credits']}\n\n"
+    text = f"Your balance is {user['credits']} - {user['credits'] * bot_config['credit_value']} INR\n\n"
     text += "Are you sure you want to withdraw all your credits?"
 
     await callback_query.edit_message_text(
@@ -614,7 +626,7 @@ async def withdraw_credits_yes(app, callback_query: types.CallbackQuery):
     )
 
     await callback_query.message.reply(
-        text="Your credits have been withdrawn, payment will be sent within 24 hours.",
+        text=f"Your credits have been withdrawn - {user['credits'] * bot_config['credit_value']} INR, payment will be sent within 24 hours.",
         reply_markup=Markup(
             [
                 [Button("Back", callback_data="start")],
@@ -677,9 +689,10 @@ async def set_payment_id(app, callback_query: types.CallbackQuery):
         value={"payment": {"payment_method": payment_method,
                            "payment_address": payment_address}},
     )
-
+    user = await user_db.get_user(user_id=callback_query.from_user.id)
+    bot_config = await bot_config_db.get_bot_config()
     await callback_query.message.reply(
-        text="Your payment method and payment address have been updated.",
+        text=f"Your payment method and payment address have been updated.\n\nYour Credit Balance Is -  {user['credits']} credits, {user['credits'] * bot_config['credit_value']} INR",
         reply_markup=Markup(
             [
                 [Button("Confirm Withdraw", callback_data="withdraw_credits")],
@@ -808,6 +821,12 @@ async def participate(app, callback_query: types.CallbackQuery):
     giveaway['end_time'] = utc_to_ist(giveaway['end_time'])
 
     user = await user_db.get_user(user_id=callback_query.from_user.id)
+
+    if user["ban_status"]["is_banned"]:
+        return await callback_query.answer(
+            "You are banned from using this bot.", show_alert=True
+        )
+    
     if not user:
         await add_new_user(app, callback_query.from_user.id, callback_query.from_user.mention)
         user = await user_db.get_user(user_id=callback_query.from_user.id)
@@ -838,7 +857,7 @@ async def participate(app, callback_query: types.CallbackQuery):
             await app.get_chat_member(giveaway['channel_id'], callback_query.from_user.id)
         except UserNotParticipant:
             return await callback_query.answer(
-                "You are not a member of the required channel, Join the channel first", show_alert=True
+                Messages.JOIN_TEXT_POPUP, show_alert=True
             )
 
     await user_db.update_user(

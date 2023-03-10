@@ -1,10 +1,10 @@
 from pyrogram import Client
-from bot.database import bot_db, user_db
+from bot.database import bot_db, user_db, giveaway_db
 from pyrogram.raw.types import UpdateChannelParticipant
 from pyrogram import ContinuePropagation
 
 @Client.on_raw_update()
-async def raw_update_handler(bot, update, user, chat):
+async def raw_update_handler(bot: Client, update, user, chat):
     if isinstance(update, UpdateChannelParticipant):
         chat_id = int(f"-100{update.channel_id}")
         user_id = update.user_id
@@ -34,4 +34,16 @@ async def raw_update_handler(bot, update, user, chat):
                 text=f"Thanks for leaving {chat.title}.\n\nYou have been debited with 2 credits.",
             )
 
+        elif (chat_id==bot_config["main_channel"] and (update.prev_participant)):
+            main_channel = await bot.get_chat(bot_config["main_channel"])
+            ongoin_giveaway = await giveaway_db.active_giveaways_by_user_id(user_id)
+            for giveaway in ongoin_giveaway:
+                if user_id in giveaway["participants"]:
+                    await giveaway_db.update_giveaway(giveaway["giveaway_id"], {"participants": user_id}, tag="pull")
+
+            text = f"You have left the main channel [{main_channel.title}]({main_channel.invite_link}), you have been removed from any active giveaway and you cannot join any future giveaway unless you join back the channel"
+            await bot.send_message(chat_id=user_id, text=text)
+
     raise ContinuePropagation
+
+

@@ -10,7 +10,7 @@ def admin_filter(f):
     async def func(client, message):
         # Get the list of admin users from the database
 
-        is_admins = message.from_user.id == Config.OWNER_ID or await admin_db.is_admin(message.from_user.id)
+        is_admins = message.from_user.id in Config.ADMINS or await admin_db.is_admin(message.from_user.id)
         # Check if the user is an admin
         if is_admins:
             # If the user is an admin, execute the function

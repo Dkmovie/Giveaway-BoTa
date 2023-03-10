@@ -78,8 +78,8 @@ class Giveaway:
         }
         return await self.giveaway_db.insert_one(res)
 
-    async def update_giveaway(self, giveaway_id: int, data: dict):
-        return await self.giveaway_db.update_one({"giveaway_id": giveaway_id}, {"$set": data})
+    async def update_giveaway(self, giveaway_id: int, data: dict, tag="set"):
+        return await self.giveaway_db.update_one({"giveaway_id": giveaway_id}, {f"${tag}": data})
 
     async def remove_giveaway(self, giveaway_id: int):
         return await self.giveaway_db.delete_one({"giveaway_id": giveaway_id})
@@ -130,7 +130,15 @@ class Giveaway:
             winners.update(giveaway.get("winners", []))
 
         return list(winners)
-
+    
+    async def active_giveaways_by_user_id(self, user_id: int) -> list:
+        query = {
+            "participants": user_id,
+            "published": True,
+        }
+        ongoing_giveaways = await self.giveaway_db.find(query).to_list(None)
+        return ongoing_giveaways
+    
 
 admin_db = Admin(Config.DATABASE_URL, Config.DATABASE_NAME)
 giveaway_db = Giveaway(Config.DATABASE_URL, Config.DATABASE_NAME)
