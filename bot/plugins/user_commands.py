@@ -2,12 +2,12 @@ import contextlib
 from pyrogram import Client, filters, types
 from pyrogram.types import Message, CallbackQuery
 from bot.config import Config
-from bot.database import user_db, bot_db
+from bot.database import user_db, bot_db, giveaway_db
 from bot.plugins.filters import make_m, check_ban
-from bot.utils import add_new_user, get_user_text
+from bot.utils import add_new_user, get_user_text, refferer_command_handler, see_participants_handler
 
 
-@Client.on_message(filters.command("start"))
+@Client.on_message(filters.command("start"), group=-1)
 @Client.on_callback_query(filters.regex("start"))
 @make_m
 @check_ban
@@ -18,38 +18,14 @@ async def start(app: Client, message: Message | types.CallbackQuery):
 
     referrer, referral_credit = None, 0
 
-    if message.command and len(message.command) > 1 and message.command[1].startswith("ref"):
-        referral_code = message.command[1].split("_")[1]
-        refferer = await user_db.filter_user({"referral.referral_code": referral_code})
+    if message.command and len(message.command) > 1:
+        if message.command[1].startswith("ref"):
+            await refferer_command_handler(app, message)
 
-        if not refferer:
-            await message.reply_text("Invalid referral code")
-        else:
-            if refferer["user_id"] == user_id:
-                await message.reply_text("You can't use your own referral code.")
-                return
-
-            if await user_db.get_user(user_id):
-                await message.reply_text("You have already joined.")
-                return
-
-            referrer = refferer["user_id"]
-
-            referral_credit = bot_config["referral_credits"]
-            tg_referer = await app.get_users(referrer)
-
-            await message.reply_text(
-                f"**{tg_referer.mention}** has given you **{referral_credit}** credits as referral bonus.")
-
-            await app.send_message(referrer, f"**{mention}** has joined using your referral link. You have been credited **{referral_credit}** credits.")
-
-            with contextlib.suppress(Exception):
-                await app.get_chat_member(bot_config["backup_channel"], user_id)
-                referral_credit += 2
-
-            await user_db.update_user(refferer['user_id'], {"referral.referred_users": user_id})
-
-            await user_db.update_user(refferer['user_id'], {"credits": referral_credit})
+        elif message.command[1].startswith("participants_"):
+            await add_new_user(app, user_id, mention, referrer, referral_credit)
+            await see_participants_handler(app, message)
+            return
 
     if isinstance(message, types.CallbackQuery):
         await message.message.delete()
@@ -75,11 +51,8 @@ async def start(app: Client, message: Message | types.CallbackQuery):
         ],
     ]
 
-    if bot_config["main_channel"]:
-        main_channel = await app.get_chat(bot_config["main_channel"])
-        main_channel_link = f"https://t.me/{main_channel.username}" if main_channel.username else main_channel.invite_link
-        buttons.append([types.InlineKeyboardButton(
-            "Go back to main channel", url=main_channel_link)])
+    buttons.append([types.InlineKeyboardButton(
+        "Watch Video Tutotrial", callback_data="tutorial")])
 
     reply_markup = types.InlineKeyboardMarkup(buttons)
 
@@ -103,22 +76,6 @@ async def help(app: Client, message: CallbackQuery):
     await message.message.reply_text(text)
 
 
-@Client.on_message(filters.command("about"))
-@Client.on_callback_query(filters.regex("about"))
-@make_m
-async def about(app, message: Message):
-    bot_config = await bot_db.get_bot_config()
-    text = bot_config["message"]["about_message"].format(
-        first_name=message.from_user.first_name,
-        last_name=message.from_user.last_name,
-        username=message.from_user.username,
-        mention=message.from_user.mention,
-        id=message.from_user.id,
-    )
-
-    await message.reply_text(text)
-
-
 @Client.on_message(filters.command("account"))
 @Client.on_callback_query(filters.regex("account"))
 @make_m
@@ -128,10 +85,90 @@ async def account(app, message: Message):
     if not user:
         await message.reply_text("You have not joined yet.")
         return
-    
+
     reply_back_buttons = [
         [
             types.InlineKeyboardButton(
                 "Back", callback_data="start"),
         ]]
-    await message.reply_text(await get_user_text(user), reply_markup=types.InlineKeyboardMarkup(reply_back_buttons))
+    mention = message.from_user.mention
+    await message.reply_text(await get_user_text(user, mention), reply_markup=types.InlineKeyboardMarkup(reply_back_buttons))
+
+
+@Client.on_callback_query(filters.regex("see_participants"))
+async def see_participants(app: Client, message: CallbackQuery):
+    _, giveaway_id = message.data.split("#")
+
+    giveaway = await giveaway_db.get_giveaway(giveaway_id)
+    if not giveaway:
+        await message.answer("Giveaway not found.", show_alert=True)
+        return
+
+    if not giveaway["participants"]:
+        await message.answer("No participants found.", show_alert=True)
+        return
+
+    url = f"https://telegram.me/{app.raw_username}?start=participants_{giveaway_id}"
+    await message.answer(url=url)
+    return
+
+
+@Client.on_callback_query(filters.regex("^tutorial$"))
+@make_m
+async def tutorial(app: Client, message: Message):
+    # > (Hindi) (English) > clicking on the button will send the respective video
+    buttons = [
+        [
+            types.InlineKeyboardButton(
+                "Hindi", callback_data="tutorial_hindi"),
+            types.InlineKeyboardButton(
+                "English", callback_data="tutorial_english"),
+        ],
+        [
+            types.InlineKeyboardButton(
+                "Back", callback_data="start"),
+        ],
+    ]
+    reply_markup = types.InlineKeyboardMarkup(buttons)
+    text = "Choose your language."
+    await message.reply_text(text, reply_markup=reply_markup)
+
+
+@Client.on_callback_query(filters.regex("^tutorial_hindi$"))
+@make_m
+async def tutorial_hindi(app: Client, message: Message):
+    bot_config = await bot_db.get_bot_config()
+    video = bot_config["hindi_tutorial"]
+
+    buttons = [
+        [
+            types.InlineKeyboardButton(
+                "Back", callback_data="tutorial"),
+        ],
+    ]
+    reply_markup = types.InlineKeyboardMarkup(buttons)
+
+    if video:
+        await message.reply_video(video, reply_markup=reply_markup, caption="Hindi Tutorial")
+    else:
+        await message.reply_text('No Video Found', reply_markup=reply_markup)
+
+
+@Client.on_callback_query(filters.regex("^tutorial_english$"))
+@make_m
+async def tutorial_english(app: Client, message: Message):
+    buttons = [
+        [
+            types.InlineKeyboardButton(
+                "Back", callback_data="tutorial"),
+        ],
+    ]
+    bot_config = await bot_db.get_bot_config()
+    video = bot_config["english_tutorial"]
+    reply_markup = types.InlineKeyboardMarkup(buttons)
+
+    if video:
+        await message.reply_video(video, reply_markup=reply_markup, caption="English Tutorial")
+    else:
+        await message.reply_text('No Video Found', reply_markup=reply_markup)
+

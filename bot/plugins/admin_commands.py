@@ -380,9 +380,6 @@ async def delete_giveaway(app, message: Message):
     await giveaway_db.delete_giveaways([giveaway_id])
     await message.reply_text(f"Giveaway {giveaway_id} has been deleted.")
 
-    await app.send_message(
-        giveaway["user_id"], f"Your giveaway {giveaway_id} has been deleted."
-    )
 
 
 # see list of users
@@ -391,15 +388,19 @@ async def delete_giveaway(app, message: Message):
 @admin_filter
 async def users(app: Client, message: Message):
     users = await user_db.get_all_users()
+
+    user_ids = [user["user_id"] for user in users]
+    users_credit = {user["user_id"]: user["credits"] for user in users}
     if not users:
         await message.reply_text("There are no users in the database.")
         return
 
     users_text = "Here is the list of users:\n\n"
-    for user in users:
+
+    for tg_user in await app.get_users(user_ids):
         with contextlib.suppress(Exception):
-            tg_user = await app.get_users(user["user_id"])
-            users_text += f"- `{user['user_id']}` - {tg_user.mention} - `{user['credits']}`\n"
+            credit = users_credit[tg_user.id]
+            users_text += f"- `{tg_user.id}` - {tg_user.mention} - `{credit}`\n"
 
         if len(users_text) > 4096:
             await message.reply_text(users_text)
@@ -436,8 +437,8 @@ async def user(app, message: Message):
     reply_markup = Markup(
         buttons
     )
-
-    text = await get_user_text(user)
+    mention = (await app.get_users(user_id)).mention
+    text = await get_user_text(user, mention)
     await message.reply_text(text, reply_markup=reply_markup)
 
 @Client.on_message(filters.command("give_all") & filters.private)

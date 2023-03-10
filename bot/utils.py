@@ -1,10 +1,11 @@
+import contextlib
 from datetime import datetime, timedelta
 import random
 from urllib.parse import quote_plus
-from pyrogram.types import InlineKeyboardMarkup as Markup, InlineKeyboardButton as Button
+from pyrogram.types import InlineKeyboardMarkup as Markup, InlineKeyboardButton as Button, User
 import pytz
 from bot.config import Config
-from bot.database import user_db, invite_links, giveaway_db, admin_db
+from bot.database import user_db, invite_links, giveaway_db, admin_db, bot_db
 from datetime import timezone
 from pyrogram import Client
 
@@ -34,7 +35,7 @@ async def revoke_channel_ref_link(app: Client, channel_id, invite_link):
     return ref_link
 
 
-async def get_user_text(user):
+async def get_user_text(user, mention=None):
 
     user_id = user["user_id"]
     credits = user["credits"]
@@ -47,6 +48,7 @@ async def get_user_text(user):
         users_joined = 0
 
     text = "Hey there! Here is your account details:\n\n"
+    text += f"**Name:** {mention}\n" if mention else ""
     text += f"**User ID:** `{user_id}`\n"
     text += f"**Credits:** `{credits}`\n"
     text += f"**Payments:** `{payments}`\n"
@@ -104,15 +106,26 @@ async def peroidic_check(app):
             participants = giveaway["participants"]
 
             if len(participants) < giveaway["total_winners"]:
-                for admin in admins:
-                    await app.send_message(admin["user_id"], f"Not enough participants, check the giveaway `/giveaway {giveaway['giveaway_id']}`")
+                await broadcast_owners(app.send_message, text=f"Giveaway `{giveaway['giveaway_id']}` ended and not enough participants")
+                await giveaway_db.update_giveaway(giveaway_id=giveaway["giveaway_id"], data={"end_time": datetime.now(ist), "published": False})
+                return
 
-            for _ in range(len(participants)):
+            excluded_winners = await giveaway_db.get_5_last_ended_giveaway_winners()
+            while len(winners) < giveaway["total_winners"] and len(participants) > 0:
                 winner = random.choice(participants)
-                winners.append(winner)
-                participants.remove(winner)
+                if winner not in excluded_winners or len(participants) <= giveaway["total_winners"] - len(winners):
+                    winners.append(winner)
+                    participants.remove(winner)
+
+            if not winners:
+                await broadcast_owners(app.send_message, text=f"Giveaway `{giveaway['giveaway_id']}` ended and no-one won")
+                return
 
             text = "**Winners:**\n"
+
+            share_winner_reply_markup = Markup(
+                [[Button("Share Winners", switch_inline_query=giveaway['giveaway_id'])]])
+            await broadcast_owners(app.send_message, text=await get_share_winner_text(app, winners), reply_markup=share_winner_reply_markup)
 
             for winner in winners:
                 user = await app.get_users(winner)
@@ -130,20 +143,99 @@ def utc_to_ist(utc_time):
     return utc_time.astimezone(pytz.timezone('Asia/Kolkata'))
 
 
-async def get_winner_text(giveaway_id, app):
-    giveaway = await giveaway_db.get_giveaway(giveaway_id)
-    winners = giveaway["winners"]
-
-    text = f"**{giveaway['heading']}**\n\n{giveaway['body']}\n\n**{giveaway['total_winners']} winners**\n\n**Winners:**\n"
-
-    for winner in winners:
-        user = await app.get_users(winner)
-        text += f"- {user.mention}\n"
-
-    return text
-
-
 async def broadcast_owners(func, *args, **kwargs):
     owners = Config.ADMINS
     for owner in owners:
         await func(owner, *args, **kwargs)
+
+
+async def get_share_winner_text(app, winners):
+    text = """🎉 Congratulations to the winner of the giveaway! 🎉
+
+🏆 And the winner is: {}!
+
+Thank you to everyone who participated. Stay tuned for more exciting giveaways and events! 😊"""
+
+    winner_text = ""
+    for winner in winners:
+        user = await app.get_users(winner)
+        winner_text += f"{user.mention}, "
+
+    return text.format(winner_text[:-2])
+
+
+async def get_giveaway_button(app, giveaway):
+    return Markup(
+        [
+            [
+                Button(
+                    text=f'{giveaway["button_text"]} - {giveaway["credits"]} Credit', callback_data=f'participate_{giveaway["giveaway_id"]}'
+                )
+            ],
+            [
+                Button(
+                    text="Earn Credits", url=f"https://t.me/{app.raw_username}?start=earn_credits"
+                )
+            ],
+            [
+                Button(
+                    text="See Participants", callback_data=f"see_participants#{giveaway['giveaway_id']}"
+                )
+            ]
+        ]
+    )
+
+
+async def see_participants_handler(app, message):
+        giveaway_id = message.command[1].split("_", 1)[1]
+        giveaway = await giveaway_db.get_giveaway(giveaway_id)
+        if not giveaway:
+            await message.reply_text("Giveaway not found.")
+            return
+
+        text = f"Participants of giveaway\n\n"
+
+        users = await app.get_users(giveaway["participants"])
+        for user in users:
+            user: User
+            text += f"- {user.first_name}, {user.id}\n"
+
+        await message.reply_text(text)
+        return
+
+
+async def refferer_command_handler(app, message):
+    user_id = message.from_user.id
+    bot_config = await bot_db.get_bot_config()
+    referral_code = message.command[1].split("_")[1]
+    mention = message.from_user.mention
+    refferer = await user_db.filter_user({"referral.referral_code": referral_code})
+
+    if not refferer:
+        await message.reply_text("Invalid referral code")
+    else:
+        if refferer["user_id"] == user_id:
+            await message.reply_text("You can't use your own referral code.")
+            return
+
+        if await user_db.get_user(user_id):
+            await message.reply_text("You have already joined.")
+            return
+
+        referrer = refferer["user_id"]
+
+        referral_credit = bot_config["referral_credits"]
+        tg_referer = await app.get_users(referrer)
+
+        await message.reply_text(
+            f"**{tg_referer.mention}** has given you **{referral_credit}** credits as referral bonus.")
+
+        await app.send_message(referrer, f"**{mention}** has joined using your referral link. You have been credited **{referral_credit}** credits.")
+
+        with contextlib.suppress(Exception):
+            await app.get_chat_member(bot_config["backup_channel"], user_id)
+            referral_credit += 2
+
+        await user_db.update_user(refferer['user_id'], {"referral.referred_users": user_id})
+
+        await user_db.update_user(refferer['user_id'], {"credits": referral_credit})

@@ -6,7 +6,7 @@ from pyrogram.types import InlineQuery, InlineQueryResultArticle, InputTextMessa
 from pyrogram.errors import UserNotParticipant
 import pytz
 from bot.database import giveaway_db, bot_db
-from bot.utils import get_winner_text, utc_to_ist
+from bot.utils import get_giveaway_button, get_share_winner_text, utc_to_ist
 
 
 @Client.on_inline_query(filters.regex(r"^giveaway_"))
@@ -36,7 +36,8 @@ async def inline(app: Client, query: InlineQuery):
                 switch_pm_parameter='start',
                 cache_time=cache_time
             )
-        text = await get_winner_text(giveaway_id, app)
+        winners = giveaway["winners"]
+        text = await get_share_winner_text(app, winners)
         await query.answer(
             results=[
                 InlineQueryResultArticle(
@@ -60,21 +61,7 @@ async def inline(app: Client, query: InlineQuery):
 
     text = f"**{giveaway['heading']}**\n\n{giveaway['body']}\n\n**Total Participants Joined:** {len(giveaway['participants'])}\n**Total Winners:** {giveaway['total_winners']}"
 
-    button_text = giveaway["button_text"]
-    reply_markup = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    text=f'{button_text} - {giveaway["credits"]} Credit', callback_data=f'participate_{giveaway["giveaway_id"]}'
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Earn Credits", url=f"https://t.me/{app.raw_username}?start=earn_credits"
-                )
-            ]
-        ]
-    )
+    reply_markup = await get_giveaway_button(app, giveaway)
     try:
         await query.answer(
             results=[
