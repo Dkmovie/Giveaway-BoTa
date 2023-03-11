@@ -143,7 +143,7 @@ async def tutorial_hindi(app: Client, message: Message):
     buttons = [
         [
             types.InlineKeyboardButton(
-                "Back", callback_data="tutorial"),
+                "Back", callback_data="start"),
         ],
     ]
     reply_markup = types.InlineKeyboardMarkup(buttons)
@@ -160,7 +160,7 @@ async def tutorial_english(app: Client, message: Message):
     buttons = [
         [
             types.InlineKeyboardButton(
-                "Back", callback_data="tutorial"),
+                "Back", callback_data="start"),
         ],
     ]
     bot_config = await bot_db.get_bot_config()
@@ -171,4 +171,3 @@ async def tutorial_english(app: Client, message: Message):
         await message.reply_video(video, reply_markup=reply_markup, caption="English Tutorial")
     else:
         await message.reply_text('No Video Found', reply_markup=reply_markup)
-

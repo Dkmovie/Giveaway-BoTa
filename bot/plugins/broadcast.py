@@ -8,8 +8,14 @@ import asyncio
 import logging
 
 
-@Client.on_message(filters.command("broadcast") & filters.user(Config.ADMINS) & filters.reply)
+@Client.on_message(filters.command("broadcast") & filters.user(Config.ADMINS))
 async def b_handler(bot, message):
+    if not message.reply_to_message:
+        await message.reply_text(
+            text="Reply /broadcast to a message to broadcast."
+        )
+        return
+    
     users = await db.get_all_users()
     b_msg = message.reply_to_message
     sts = await message.reply_text(
@@ -17,7 +23,7 @@ async def b_handler(bot, message):
     )
 
     start_time = time.time()
-    total_users = await db.get_total_users()
+    total_users = await db.total_users_count()
     done = 0
     blocked = 0
     deleted = 0
@@ -34,7 +40,7 @@ async def b_handler(bot, message):
 
     tasks = []
 
-    async for user in users:
+    for user in users:
         task = asyncio.ensure_future(run_task(user))
         tasks.append(task)
 

@@ -1,12 +1,10 @@
 import contextlib
 from datetime import datetime, timedelta
 import random
-from urllib.parse import quote_plus
 from pyrogram.types import InlineKeyboardMarkup as Markup, InlineKeyboardButton as Button, User
 import pytz
 from bot.config import Config
 from bot.database import user_db, invite_links, giveaway_db, admin_db, bot_db
-from datetime import timezone
 from pyrogram import Client
 
 
@@ -187,21 +185,25 @@ async def get_giveaway_button(app, giveaway):
 
 
 async def see_participants_handler(app, message):
-        giveaway_id = message.command[1].split("_", 1)[1]
-        giveaway = await giveaway_db.get_giveaway(giveaway_id)
-        if not giveaway:
-            await message.reply_text("Giveaway not found.")
-            return
-
-        text = f"Participants of giveaway\n\n"
-
-        users = await app.get_users(giveaway["participants"])
-        for user in users:
-            user: User
-            text += f"- {user.first_name}, {user.id}\n"
-
-        await message.reply_text(text)
+    giveaway_id = message.command[1].split("_", 1)[1]
+    giveaway = await giveaway_db.get_giveaway(giveaway_id)
+    if not giveaway:
+        await message.reply_text("Giveaway not found.")
         return
+
+    if not giveaway["participants"]:
+        await message.reply_text("No participants found.")
+        return
+    
+    text = f"Participants of Giveaway\n\n"
+
+    users = await app.get_users(giveaway["participants"])
+    for user in users:
+        user: User
+        text += f"- {user.first_name}, {user.id}\n"
+
+    await message.reply_text(text)
+    return
 
 
 async def refferer_command_handler(app, message):

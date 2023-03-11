@@ -41,8 +41,11 @@ class Config(object):
 class Messages(object):
     HEADING = "💰💰 Exciting news! We're having a ₹500 giveaway! 💰💰"
     BODY = """👉 Just click on the 🎉 "Join Giveaway" 🎉 button to enter the giveaway!
+
 🎁 Giveaway Prize: ₹500 💰
+
 🕰️ Giveaway Ends On: 05:00 PM, 4th March, 2023 ⏰
+
 🤖 The bot will pick a random winner 🎊 and will announce it publicly! 📣
 """
     JOIN_TEXT_POPUP = "You need to Join @F11Sports to participate in the Giveaway"

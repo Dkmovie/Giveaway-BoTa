@@ -43,6 +43,7 @@ async def dashboard(app, message: Message):
         f"/banlist - The list of banned users\n"
         f"/adminlist - The list of admins\n"
         f"/give_all - Give creidts to all the users in the bot database\n"
+        f"/broadcast - Broadcast a message to all the users in the bot database\n"
     )
 
 
@@ -262,9 +263,17 @@ async def giveaways(app, message: CallbackQuery):
         return
 
     giveaways_text = "Here is the list of giveaways:\n\n"
-    sorted_list = sorted(giveaways, key=lambda k: k['published'], reverse=True)
+    published_giveaways = [g for g in giveaways if g['published']]
+    not_published_giveaways = [g for g in giveaways if not g['published']]
+
+    # Sort the published giveaways by start time
+    sorted_published_giveaways = sorted(
+        published_giveaways, key=lambda k: k['start_time'], reverse=True)
+
+    # Concatenate the two lists back together
+    sorted_list = sorted_published_giveaways + not_published_giveaways
     for giveaway in sorted_list:
-        giveaways_text += f"ID: `{giveaway['giveaway_id']}` - {giveaway['heading']} - Active: {giveaway['published']}\n"
+        giveaways_text += f"ID: `{giveaway['giveaway_id']}` - {giveaway['heading']} - Active: {giveaway['published']}\n\n"
 
         if len(giveaways_text) > 4096:
             await message.reply_text(giveaways_text)
@@ -352,7 +361,14 @@ async def giveaway(app, message: Message):
         giveaway_text += f"Giveaway Status: `Ended`\n"
         buttons.append([
             Button("📣 Share Winners", switch_inline_query=giveaway_id),
-        ],)
+        ])
+
+
+    buttons.append([
+        Button(
+            text="See Participants", url=f"https://telegram.me/test264bot?start=participants_{giveaway['giveaway_id']}"
+        )
+    ])
 
     markup = Markup(buttons) if buttons else None
 
@@ -379,7 +395,6 @@ async def delete_giveaway(app, message: Message):
 
     await giveaway_db.delete_giveaways([giveaway_id])
     await message.reply_text(f"Giveaway {giveaway_id} has been deleted.")
-
 
 
 # see list of users
@@ -440,6 +455,7 @@ async def user(app, message: Message):
     mention = (await app.get_users(user_id)).mention
     text = await get_user_text(user, mention)
     await message.reply_text(text, reply_markup=reply_markup)
+
 
 @Client.on_message(filters.command("give_all") & filters.private)
 @admin_filter

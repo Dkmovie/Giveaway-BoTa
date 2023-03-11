@@ -503,13 +503,17 @@ async def check_balance(app, callback_query: types.CallbackQuery):
 @Client.on_callback_query(filters.regex("^earn"))
 async def earn(app: Client, callback_query: types.CallbackQuery):
     bot_config = await bot_config_db.get_bot_config()
+    user = await user_db.get_user(user_id=callback_query.from_user.id)
 
-    main_channel = await app.get_chat(bot_config["main_channel"])
-
-    if main_channel.username:
-        main_channel = f"https://telegram.me/{main_channel.username}"
+    if user['referral']['channel_ref_link']:
+        main_channel = user['referral']['channel_ref_link']
     else:
-        main_channel = main_channel.invite_link
+        chat_id = await app.get_chat(bot_config["main_channel"])
+        ref_link = await generate_channel_ref_link(
+            app, callback_query.from_user.id, chat_id.id
+        )
+        await user_db.update_user(user_id=callback_query.from_user.id, data={"referral.channel_ref_link": ref_link.invite_link})
+        main_channel = ref_link.invite_link
 
     backup_channel = None
 
@@ -540,7 +544,7 @@ Copy - 🔗 `{main_channel}`
 """
 
     text += bot_config["message"]["earn_credits_message"]
-    share_url = f"https://telegran.me/share/url?url={quote_plus(main_channel)}"
+    share_url = f"https://telegram.me/share/url?url={quote_plus(main_channel)}"
     await callback_query.edit_message_text(
         text=text,
         reply_markup=Markup(
@@ -552,7 +556,7 @@ Copy - 🔗 `{main_channel}`
                     ),
                 ],
                 [
-                    Button("Refer your friend", url=share_url),
+                    Button("Share Link", url=share_url),
                 ],
             ]
             + [
