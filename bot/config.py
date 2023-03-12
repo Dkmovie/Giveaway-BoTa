@@ -39,6 +39,7 @@ class Config(object):
 
 
 class Messages(object):
+
     HEADING = "💰💰 Exciting news! We're having a ₹500 giveaway! 💰💰"
     BODY = """👉 Just click on the 🎉 "Join Giveaway" 🎉 button to enter the giveaway!
 
@@ -49,3 +50,7 @@ class Messages(object):
 🤖 The bot will pick a random winner 🎊 and will announce it publicly! 📣
 """
     JOIN_TEXT_POPUP = "You need to Join @F11Sports to participate in the Giveaway"
+
+    HEADING = os.environ.get("HEADING", HEADING)
+    BODY = os.environ.get("BODY", BODY)
+    JOIN_TEXT_POPUP = os.environ.get("JOIN_TEXT_POPUP", JOIN_TEXT_POPUP)
