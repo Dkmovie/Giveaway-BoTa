@@ -5,7 +5,7 @@ from pyrogram.types import (
     InlineKeyboardButton as Button,
     InlineKeyboardMarkup as Markup,
 )
-from bot.database import bot_db
+from bot.database import bot_db, user_db
 from bot.plugins.filters import make_m
 
 
@@ -232,6 +232,7 @@ async def setm_main_channel(client: Client, message: Message):
                 await bot_db.set_bot_config({"main_channel": text})
                 text = f"Main channel set to {chat.title}"
                 await message.reply_text(text)
+                await user_db.update_all_users_channel_ref_link()
                 break
             except Exception:
                 await message.reply_text(

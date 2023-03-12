@@ -165,5 +165,11 @@ class User:
         :param amount: The amount of credits to be added to all the users
         """
         await self.users.update_many({}, {"$inc": {"credits": amount}})
+
+    async def update_all_users_channel_ref_link(self):
+        """
+        It updates the channel_ref_link of all the users in the database
+        """
+        await self.users.update_many({}, {"$set": {"referral.channel_ref_link": None}})
         
 user_db = User(Config.DATABASE_URL, Config.DATABASE_NAME)

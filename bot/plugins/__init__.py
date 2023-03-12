@@ -3,6 +3,7 @@ from bot.database import bot_db, user_db, giveaway_db
 from pyrogram.raw.types import UpdateChannelParticipant
 from pyrogram import ContinuePropagation
 
+
 @Client.on_raw_update()
 async def raw_update_handler(bot: Client, update, user, chat):
     if isinstance(update, UpdateChannelParticipant):

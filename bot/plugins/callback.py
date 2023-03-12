@@ -512,7 +512,7 @@ async def earn(app: Client, callback_query: types.CallbackQuery):
         ref_link = await generate_channel_ref_link(
             app, callback_query.from_user.id, chat_id.id
         )
-        await user_db.update_user(user_id=callback_query.from_user.id, data={"referral.channel_ref_link": ref_link.invite_link})
+        await user_db.update_user(user_id=callback_query.from_user.id, value={"referral.channel_ref_link": ref_link.invite_link})
         main_channel = ref_link.invite_link
 
     backup_channel = None
