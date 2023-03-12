@@ -443,7 +443,9 @@ async def raffle(app, callback_query: types.CallbackQuery):
             text=callback_query.message.text + "\n\n**Not enough participants.**"
         )
     excluded_winners = await giveaway_db.get_5_last_ended_giveaway_winners()
-    while len(winners) < giveaway["total_winners"] and len(participants) > 0:
+
+    remaining_winners = giveaway["total_winners"] - len(winners)
+    while remaining_winners > 0 and len(participants) > 0:
         winner = random.choice(participants)
         if winner not in excluded_winners or len(participants) <= giveaway[
             "total_winners"
