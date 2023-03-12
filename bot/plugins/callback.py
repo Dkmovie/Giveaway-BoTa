@@ -1042,7 +1042,7 @@ async def participate(app, callback_query: types.CallbackQuery):
 
     await app.send_message(
         chat_id=Config.LOG_CHANNEL,
-        text=f"{callback_query.from_user.id} has participated in giveaway {giveaway['giveaway_id']}.",
+        text=f"{callback_query.from_user.mention} has participated in giveaway {giveaway['giveaway_id']} - {giveaway['heading']}",
     )
 
 
