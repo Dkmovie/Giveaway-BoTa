@@ -157,7 +157,7 @@ Thank you to everyone who participated. Stay tuned for more exciting giveaways a
     winner_text = ""
     for winner in winners:
         user = await app.get_users(winner)
-        winner_text += f"{user.mention}, "
+        winner_text += f"{user.mention} - {user.id}, "
 
     return text.format(winner_text[:-2])
 
