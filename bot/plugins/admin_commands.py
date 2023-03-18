@@ -412,8 +412,9 @@ async def users(app: Client, message: Message):
 
     users_text = "Here is the list of users:\n\n"
 
-    for tg_user in await app.get_users(user_ids):
+    for tg_user in user_ids:
         with contextlib.suppress(Exception):
+            tg_user = await app.get_users(tg_user)
             credit = users_credit[tg_user.id]
             users_text += f"- `{tg_user.id}` - {tg_user.mention} - `{credit}`\n"
 

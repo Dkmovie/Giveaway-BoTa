@@ -1,11 +1,17 @@
 import logging
 import logging.config
 import sys
-from pyrogram import Client
-from aiohttp import web
-from bot.config import Config
+from typing import Iterable, List, Union
+
+import pyrogram
 import pyromod
+from aiohttp import web
+from pyrogram import Client
+from pyrogram import types
+
+from bot.config import Config
 from bot.database import bot_db
+
 # Get logging configurations
 
 logging.getLogger().setLevel(logging.INFO)
@@ -41,7 +47,6 @@ class Bot(Client):
         self.username = f"@{me.username}"
         self.name = me.first_name
 
-        
         if not await bot_db.db.config.find_one({"_id": "config"}):
             await bot_db.create_bot_config()
 
