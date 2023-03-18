@@ -1,13 +1,11 @@
 import logging
 import logging.config
 import sys
-from typing import Iterable, List, Union
 
 import pyrogram
 import pyromod
 from aiohttp import web
-from pyrogram import Client
-from pyrogram import types
+from pyrogram import Client, errors
 
 from bot.config import Config
 from bot.database import bot_db
@@ -72,4 +70,13 @@ class Bot(Client):
             await web.TCPSite(app, "0.0.0.0", 8000).start()
 
     async def stop(self, *args):
-        await super().stop()
+        await super().stop() 
+        self.send_message
+
+
+    async def send_message(*args, **kwargs):
+        try:
+            return await super().send_message(*args, **kwargs)
+        except (errors.UserDeactivated, errors.UserIsBlocked) as e:
+            logging.error(e)
+            return None
