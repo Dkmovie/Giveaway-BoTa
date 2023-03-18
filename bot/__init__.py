@@ -74,7 +74,7 @@ class Bot(Client):
         self.send_message
 
 
-    async def send_message(*args, **kwargs):
+    async def send_message(self, *args, **kwargs):
         try:
             return await super().send_message(*args, **kwargs)
         except (errors.UserDeactivated, errors.UserIsBlocked) as e:
