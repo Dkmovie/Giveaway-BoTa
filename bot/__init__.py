@@ -1,11 +1,13 @@
+import asyncio
 import logging
 import logging.config
 import sys
+from typing import Iterable, List, Union
 
 import pyrogram
 import pyromod
 from aiohttp import web
-from pyrogram import Client, errors
+from pyrogram import Client, errors, raw, types
 
 from bot.config import Config
 from bot.database import bot_db
@@ -70,13 +72,80 @@ class Bot(Client):
             await web.TCPSite(app, "0.0.0.0", 8000).start()
 
     async def stop(self, *args):
-        await super().stop() 
+        await super().stop()
         self.send_message
-
 
     async def send_message(self, *args, **kwargs):
         try:
             return await super().send_message(*args, **kwargs)
         except (errors.UserDeactivated, errors.UserIsBlocked) as e:
             logging.error(e)
+            self.get_users
             return None
+
+    async def get_users(
+        self: "pyrogram.Client",
+        user_ids: Union[int, str, Iterable[Union[int, str]]],
+        raise_error: bool = True,
+        limit: int = 200
+    ) -> Union["types.User", List["types.User"]]:
+        """Get information about a user.
+        You can retrieve up to 200 users at once.
+
+        Parameters:
+            user_ids (``int`` | ``str`` | Iterable of ``int`` or ``str``):
+                A list of User identifiers (id or username) or a single user id/username.
+                For a contact that exists in your Telegram address book you can use his phone number (str).
+            raise_error (``bool``, *optional*):
+                If ``True``, an error will be raised if a user_id is invalid or not found.
+                If ``False``, the function will continue to the next user_id if one is invalid or not found.
+            limit (``int``, *optional*):
+                The maximum number of users to retrieve per request. Must be a value between 1 and 200.
+
+        Returns:
+            :obj:`~pyrogram.types.User` | List of :obj:`~pyrogram.types.User`: In case *user_ids* was not a list,
+            a single user is returned, otherwise a list of users is returned.
+
+        Example:
+            .. code-block:: python
+
+                # Get information about one user
+                await app.get_users("me")
+
+                # Get information about multiple users at once
+                await app.get_users([user_id1, user_id2, user_id3])
+        """
+        is_iterable = not isinstance(user_ids, (int, str))
+        user_ids = list(user_ids) if is_iterable else [user_ids]
+
+        users = types.List()
+        user_ids_chunks = [user_ids[i:i + limit] for i in range(0, len(user_ids), limit)]
+
+        # Define the `resolve` function with error handling based on the `raise_error` parameter
+        async def resolve(user_id):
+            try:
+                return await self.resolve_peer(user_id)
+            except Exception:
+                
+                if raise_error:
+                    raise
+                else:
+                    return None
+
+        for chunk in user_ids_chunks:
+
+            chunk_resolved = await asyncio.gather(*[resolve(i) for i in chunk if i is not None])
+
+            # Remove any `None` values from the resolved user_ids list
+            chunk_resolved = list(filter(None, chunk_resolved))
+
+            r = await self.invoke(
+                raw.functions.users.GetUsers(
+                    id=chunk_resolved
+                )
+            )
+
+            for i in r:
+                users.append(types.User._parse(self, i))
+
+        return users if is_iterable else users[0]

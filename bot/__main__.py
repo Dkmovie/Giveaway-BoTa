@@ -9,6 +9,6 @@ if __name__ == '__main__':
     scheduler = AsyncIOScheduler()
     scheduler.start()
 
-    scheduler.add_job(peroidic_check, 'interval', seconds=60, args=[app])
+    # scheduler.add_job(peroidic_check, 'interval', seconds=60, args=[app])
 
     app.run()

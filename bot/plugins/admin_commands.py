@@ -410,15 +410,18 @@ async def users(app: Client, message: Message):
         await message.reply_text("There are no users in the database.")
         return
 
-    users_text = "Here is the list of users:\n\n"
-
-    for tg_user in user_ids:
-        with contextlib.suppress(Exception):
-            tg_user = await app.get_users(tg_user)
+    total_users = len(users)
+    users_text = "Here is the list of users in the database:\n\n"
+    users_text += f"Total Users: {total_users}\n\n"
+    for tg_user in await app.get_users(user_ids, raise_error=False):
+        try:
             credit = users_credit[tg_user.id]
             users_text += f"- `{tg_user.id}` - {tg_user.mention} - `{credit}`\n"
-
+        except:
+            pass
+        
         if len(users_text) > 4096:
+            
             await message.reply_text(users_text)
             users_text = ""
 
