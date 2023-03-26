@@ -126,7 +126,6 @@ class Bot(Client):
             try:
                 return await self.resolve_peer(user_id)
             except Exception:
-                
                 if raise_error:
                     raise
                 else:
