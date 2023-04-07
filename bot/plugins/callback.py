@@ -1433,7 +1433,9 @@ async def users_added(app, message: types.CallbackQuery):
     if not user_joined:
         return await message.message.reply("No users added.")
 
-    text = ""
+    total_users = len(user_joined)
+
+    text = f"Total users added: {total_users}\n\n"
 
     for user_id in user_joined:
         try:
