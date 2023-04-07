@@ -1,3 +1,6 @@
+import uvloop
+uvloop.install()
+
 import asyncio
 import logging
 import logging.config

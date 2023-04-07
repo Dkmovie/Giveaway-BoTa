@@ -1,11 +1,12 @@
 import contextlib
 from datetime import datetime, timedelta
 import random
+from typing import List
 from pyrogram.types import InlineKeyboardMarkup as Markup, InlineKeyboardButton as Button, User
 import pytz
 from bot.config import Config
-from bot.database import user_db, invite_links, giveaway_db, admin_db, bot_db
-from pyrogram import Client
+from bot.database import user_db, invite_links, giveaway_db, admin_db, bot_db, lb as leaderboard_db
+from pyrogram import Client, types
 
 
 async def add_new_user(c, user_id, mention, referrer=None, credits=0):
@@ -82,58 +83,8 @@ async def check_spam_for_link(link, num_users=50, time_limit=1):
 
 
 async def peroidic_check(app):
-    giveaways = await giveaway_db.get_giveaways()
-    admins = await admin_db.get_admins()
-    for giveaway in giveaways:
-        ist = pytz.timezone('Asia/Kolkata')
-        now_ist = datetime.now(ist)
-
-        giveaway['end_time'] = utc_to_ist(giveaway['end_time'])
-        giveaway['start_time'] = utc_to_ist(giveaway['start_time'])
-
-        if not giveaway["published"] and giveaway['start_time'] <= now_ist and giveaway['end_time'] >= now_ist:
-            await giveaway_db.update_giveaway(giveaway["giveaway_id"], {"published": True})
-            for admin in admins:
-                await app.send_message(admin["user_id"], f"A giveaway is going to start soon. Please check the giveaway channel, check the giveaway `/giveaway {giveaway['giveaway_id']}`")
-
-        elif giveaway["published"] and giveaway['end_time'] <= now_ist and giveaway['start_time'] <= now_ist:
-            for admin in admins:
-                await app.send_message(admin["user_id"], f"A giveaway has ended. Please check the giveaway channel, check the giveaway `/giveaway {giveaway['giveaway_id']}`")
-
-            winners = []
-            participants = giveaway["participants"]
-
-            if len(participants) < giveaway["total_winners"]:
-                await broadcast_owners(app.send_message, text=f"Giveaway `{giveaway['giveaway_id']}` ended and not enough participants")
-                await giveaway_db.update_giveaway(giveaway_id=giveaway["giveaway_id"], data={"end_time": datetime.now(ist), "published": False})
-                return
-
-            excluded_winners = await giveaway_db.get_5_last_ended_giveaway_winners()
-            while len(winners) < giveaway["total_winners"] and len(participants) > 0:
-                winner = random.choice(participants)
-                if winner not in excluded_winners or len(participants) <= giveaway["total_winners"] - len(winners):
-                    winners.append(winner)
-                    participants.remove(winner)
-
-            if not winners:
-                await broadcast_owners(app.send_message, text=f"Giveaway `{giveaway['giveaway_id']}` ended and no-one won")
-                return
-
-            text = "**Winners:**\n"
-
-            share_winner_reply_markup = Markup(
-                [[Button("Share Winners", switch_inline_query=giveaway['giveaway_id'])]])
-            await broadcast_owners(app.send_message, text=await get_share_winner_text(app, winners), reply_markup=share_winner_reply_markup)
-
-            for winner in winners:
-                user = await app.get_users(winner)
-                text += f"- {user.mention}\n"
-                await app.send_message(
-                    chat_id=winner,
-                    text=f"Congratulations! You won the giveaway: {giveaway['heading']}.",
-                )
-
-            await giveaway_db.update_giveaway(giveaway_id=giveaway["giveaway_id"], data={"end_time": datetime.now(ist), "published": False, "winners": winners})
+    await giveaway_periodic_check(app)
+    await leaderboard_periodic_check(app)
 
 
 def utc_to_ist(utc_time):
@@ -193,7 +144,7 @@ async def see_participants_handler(app, message):
     if not giveaway["participants"]:
         await message.reply_text("No participants found.")
         return
-    
+
     text = f"Participants of Giveaway\n\n"
 
     users = await app.get_users(giveaway["participants"])
@@ -240,3 +191,161 @@ async def refferer_command_handler(app, message):
         await user_db.update_user(refferer['user_id'], {"referral.referred_users": user_id})
 
         await user_db.update_user(refferer['user_id'], {"credits": referral_credit})
+        await leaderboard_db.add_score_to_user(refferer['user_id'], referral_credit)
+
+
+async def get_leaderboard_text(lb_id, channel=False):
+    lb = await leaderboard_db.get_leaderboard_by_id(lb_id)
+    if not lb:
+        return None
+
+    heading = lb["title"]
+
+    if channel:
+        description = [lb["descriptions"][0], lb["descriptions"][-1]
+                       ] if len(lb["descriptions"]) > 1 else lb["descriptions"]
+    else:
+        description = lb["descriptions"]
+
+    no_of_winners = lb["no_of_winners"]
+    start_time = utc_to_ist(lb["start_time"]).strftime("%d %b %Y, %I:%M %p")
+    end_time = utc_to_ist(lb["end_time"]).strftime("%d %b %Y, %I:%M %p")
+    status = "Active" if lb["status"] else "Inactive"
+
+    text = f"**{heading}**\n\n"
+
+    for desc in description:
+        text += f"{desc}\n\n"
+
+    if not channel:
+        text += f"**No. of Winners:** {no_of_winners}\n"
+        text += f"**Start Time:** {start_time}\n"
+        text += f"**End Time:** {end_time}\n"
+        text += f"**Status:** {status}\n"
+
+    return text
+
+
+async def get_leaderboard_button():
+    # Earn credits and views leaderboard rankings
+    return Markup(
+        [
+            [
+                Button(
+                    text="Earn Credits", url=f"https://t.me/{Config.BOT_USERNAME}?start=earn_credits"
+                )
+            ],
+            [
+                Button(
+                    text="Leaderboard Rankings", url=f"https://t.me/{Config.BOT_USERNAME}?start=leaderboard_rankings"
+                )
+            ]
+        ]
+    )
+
+
+async def leaderboard_rankings_cmd_handler(app, message: types.Message):
+    " Get all the leaderboard with inline buttons"
+    lbs = await leaderboard_db.get_all_leaderboards()
+    buttons = []
+    for lb in lbs:
+        buttons.append([types.InlineKeyboardButton(
+            lb["title"], callback_data=f"lb_{lb['_id']}")])
+
+    buttons.append([types.InlineKeyboardButton(
+        "Back", callback_data="start")])
+    reply_markup = types.InlineKeyboardMarkup(buttons)
+
+    if isinstance(message, types.CallbackQuery):
+        await message.edit_message_text("List of leaderboards", reply_markup=reply_markup)
+        return
+
+    await message.reply_text("List of leaderboards", reply_markup=reply_markup)
+
+
+async def giveaway_periodic_check(app):
+    giveaways = await giveaway_db.get_giveaways()
+    admins = await admin_db.get_admins()
+    for giveaway in giveaways:
+        ist = pytz.timezone('Asia/Kolkata')
+        now_ist = datetime.now(ist)
+
+        giveaway['end_time'] = utc_to_ist(giveaway['end_time'])
+        giveaway['start_time'] = utc_to_ist(giveaway['start_time'])
+
+        if not giveaway["published"] and giveaway['start_time'] <= now_ist and giveaway['end_time'] >= now_ist:
+            await giveaway_db.update_giveaway(giveaway["giveaway_id"], {"published": True})
+            for admin in admins:
+                await app.send_message(admin["user_id"], f"A giveaway is going to start soon. Please check the giveaway channel, check the giveaway `/giveaway {giveaway['giveaway_id']}`")
+
+        elif giveaway["published"] and giveaway['end_time'] <= now_ist and giveaway['start_time'] <= now_ist:
+            for admin in admins:
+                await app.send_message(admin["user_id"], f"A giveaway has ended. Please check the giveaway channel, check the giveaway `/giveaway {giveaway['giveaway_id']}`")
+
+            winners = []
+            participants = giveaway["participants"]
+
+            if len(participants) < giveaway["total_winners"]:
+                await broadcast_owners(app.send_message, text=f"Giveaway `{giveaway['giveaway_id']}` ended and not enough participants")
+                await giveaway_db.update_giveaway(giveaway_id=giveaway["giveaway_id"], data={"end_time": datetime.now(ist), "published": False})
+                return
+
+            excluded_winners = await giveaway_db.get_5_last_ended_giveaway_winners()
+            while len(winners) < giveaway["total_winners"] and len(participants) > 0:
+                winner = random.choice(participants)
+                if winner not in excluded_winners or len(participants) <= giveaway["total_winners"] - len(winners):
+                    winners.append(winner)
+                    participants.remove(winner)
+
+            if not winners:
+                await broadcast_owners(app.send_message, text=f"Giveaway `{giveaway['giveaway_id']}` ended and no-one won")
+                return
+
+            text = "**Winners:**\n"
+
+            share_winner_reply_markup = Markup(
+                [[Button("Share Winners", switch_inline_query=giveaway['giveaway_id'])]])
+            await broadcast_owners(app.send_message, text=await get_share_winner_text(app, winners), reply_markup=share_winner_reply_markup)
+
+            for winner in winners:
+                user = await app.get_users(winner)
+                text += f"- {user.mention}\n"
+                await app.send_message(
+                    chat_id=winner,
+                    text=f"Congratulations! You won the giveaway: {giveaway['heading']}.",
+                )
+
+            await giveaway_db.update_giveaway(giveaway_id=giveaway["giveaway_id"], data={"end_time": datetime.now(ist), "published": False, "winners": winners})
+
+
+async def leaderboard_periodic_check(app):
+    leaderboards = await leaderboard_db.get_all_leaderboards()
+    for leaderboard in leaderboards:
+        ist = pytz.timezone('Asia/Kolkata')
+        now_ist = datetime.now(ist)
+        leaderboard['end_time'] = utc_to_ist(leaderboard['end_time'])
+        leaderboard['start_time'] = utc_to_ist(leaderboard['start_time'])
+        if leaderboard['start_time'] <= now_ist and leaderboard['end_time'] >= now_ist and not leaderboard['status']:
+            await leaderboard_db.update_leaderboard(leaderboard["_id"], {"status": True})
+            await broadcast_owners(app.send_message, text=f"Leaderboard `{leaderboard['title']}` started\n\nCheck the leaderboard rankings by clicking on the button below", reply_markup=await get_leaderboard_button())
+        elif leaderboard['end_time'] <= now_ist and leaderboard['start_time'] <= now_ist and leaderboard['status']:
+            await leaderboard_db.update_leaderboard(leaderboard["_id"], {"status": False})
+            await broadcast_owners(app.send_message, text=f"Leaderboard `{leaderboard['title']}` ended\n\nCheck the leaderboard rankings by clicking on the button below", reply_markup=await get_leaderboard_button())
+
+
+async def get_leaderboard_buttons(lb_id) -> List[List[Button]]:
+    leaderboard = await leaderboard_db.get_leaderboard_by_id(lb_id)
+    buttons = [
+        [Button("Delete", callback_data=f"delete_leaderboard#{lb_id}")],
+        [Button("Share", switch_inline_query=f"leaderboard {lb_id}")],
+        [Button("Back", callback_data="leaderboards")]
+    ]
+
+    if leaderboard["status"] is False and utc_to_ist(leaderboard["start_time"]) > utc_to_ist(datetime.utcnow()):
+        buttons.insert(
+            0, [Button("Start Now", callback_data=f"start_leaderboard#{lb_id}")])
+    elif leaderboard["status"] is True and utc_to_ist(leaderboard["end_time"]) > utc_to_ist(datetime.utcnow()) and utc_to_ist(leaderboard["start_time"]) < utc_to_ist(datetime.utcnow()):
+        buttons.insert(
+            0, [Button("End Now", callback_data=f"end_leaderboard#{lb_id}")])
+
+    return buttons

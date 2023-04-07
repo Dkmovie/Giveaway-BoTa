@@ -56,9 +56,9 @@ class User:
                 "referral_code": self.generate_referral_link(user_id),
             },
             "share_status": {
-                "shared_to_contacts": {}, # users who shared the bot to a contact
-                "shared_to_groups": {}, # users who shared the bot to a group
-                "users_joined": [], # users who joined the channel using the user's unique link
+                "shared_to_contacts": {},  # users who shared the bot to a contact
+                "shared_to_groups": {},  # users who shared the bot to a group
+                "users_joined": [],  # users who joined the channel using the user's unique link
                 "joined_channels": {},  # {channel_id: bool} channels the user has joined
             },
         }
@@ -109,7 +109,7 @@ class User:
 
     async def filter_user(self, value):
         return await self.users.find_one(value)
-    
+
     async def total_users_count(self, ):
         """
         It returns the total number of users in the database
@@ -117,12 +117,12 @@ class User:
         """
         return await self.users.count_documents({})
 
-    async def get_all_users(self):
+    async def get_all_users(self, limit=0):
         """
         > This function returns all the users in the database
         :return: A cursor object
         """
-        return await self.users.find({}).to_list(None)
+        return await self.users.find({}).sort("credits", -1).to_list(None if limit == 0 else limit)
 
     async def delete_user(self, user_id):
         """
@@ -141,14 +141,13 @@ class User:
         """
         user = await self.users.find_one({"user_id": int(id)})
         return bool(user)
-    
+
     async def get_banlist(self):
         """
         > This function returns a cursor to all the banned users in the database
         :return: A cursor object
         """
         return self.users.find({"ban_status.is_banned": True})
-    
 
     async def total_banned_users_count(self):
         """
@@ -156,7 +155,6 @@ class User:
         :return: The total number of banned users in the database.
         """
         return await self.users.count_documents({"ban_status.is_banned": True})
-    
 
     async def update_all_users_credits(self, amount):
         """
@@ -171,5 +169,32 @@ class User:
         It updates the channel_ref_link of all the users in the database
         """
         await self.users.update_many({}, {"$set": {"referral.channel_ref_link": None}})
-        
+
+    async def get_users_joined_count(self):
+        pipeline = [
+            {
+                "$group": {
+                    "_id": None,
+                    "total_users_joined": {"$sum": {"$size": "$share_status.users_joined"}}
+                }
+            }
+        ]
+        res = await self.users.aggregate(pipeline).to_list(None)
+        return res[0]["total_users_joined"]
+
+    async def get_documents_by_users_joined_length(self, limit=0):
+        "sorts the documents by the length of the users_joined list"
+        pipeline = [
+            {
+                "$project": {
+                    "user_id": 1,
+                    "users_joined_length": {"$size": "$share_status.users_joined"}
+                }
+            },
+            {"$sort": {"users_joined_length": -1}},
+        ]
+        return await self.users.aggregate(pipeline).to_list(None if limit == 0 else limit)
+
+
+
 user_db = User(Config.DATABASE_URL, Config.DATABASE_NAME)

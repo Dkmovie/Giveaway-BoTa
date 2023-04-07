@@ -1,15 +1,21 @@
 import contextlib
+
 from pyrogram import Client, filters, types
-from pyrogram.types import Message, CallbackQuery
+from pyrogram.types import CallbackQuery, Message
+from tabulate import tabulate
+
 from bot.config import Config
-from bot.database import user_db, bot_db, giveaway_db
-from bot.plugins.filters import make_m, check_ban
-from bot.utils import add_new_user, get_user_text, refferer_command_handler, see_participants_handler
+from bot.database import bot_db, giveaway_db
+from bot.database import lb as leaderboard_db
+from bot.database import user_db
+from bot.plugins.filters import check_ban, make_m
+from bot.utils import (add_new_user, get_user_text,
+                       leaderboard_rankings_cmd_handler,
+                       refferer_command_handler, see_participants_handler)
 
 
 @Client.on_message(filters.command("start"), group=-1)
 @Client.on_callback_query(filters.regex("start"))
-@make_m
 @check_ban
 async def start(app: Client, message: Message | types.CallbackQuery):
     user_id = message.from_user.id
@@ -18,7 +24,7 @@ async def start(app: Client, message: Message | types.CallbackQuery):
 
     referrer, referral_credit = None, 0
 
-    if message.command and len(message.command) > 1:
+    if not isinstance(message, types.CallbackQuery) and message.command and len(message.command) > 1:
         if message.command[1].startswith("ref"):
             await refferer_command_handler(app, message)
 
@@ -27,9 +33,16 @@ async def start(app: Client, message: Message | types.CallbackQuery):
             await see_participants_handler(app, message)
             return
 
+        elif message.command[1] == "leaderboard_rankings":
+            await add_new_user(app, user_id, mention, referrer, referral_credit)
+            await leaderboard_rankings_cmd_handler(app, message)
+            return
+
     if isinstance(message, types.CallbackQuery):
-        await message.message.delete()
-        message = message.message
+        await message.answer()
+        func = message.edit_message_text
+    else:
+        func = message.reply_text
 
     await add_new_user(app, user_id, mention, referrer, referral_credit)
 
@@ -48,6 +61,8 @@ async def start(app: Client, message: Message | types.CallbackQuery):
         [
             types.InlineKeyboardButton(
                 "Account 💻", callback_data="account"),
+            # types.InlineKeyboardButton(
+            #     "Leaderboard 🏆", callback_data="leaderboard_rankings"),
         ],
     ]
 
@@ -64,7 +79,12 @@ async def start(app: Client, message: Message | types.CallbackQuery):
         id=message.from_user.id,
         bot_name=app.name,
     )
-    await message.reply_text(text, reply_markup=reply_markup)
+
+    kwargs = {
+        "text": text,
+        "reply_markup": reply_markup,
+    }
+    await func(**kwargs)
 
 
 @Client.on_callback_query(filters.regex("help"))
@@ -171,3 +191,71 @@ async def tutorial_english(app: Client, message: Message):
         await message.reply_video(video, reply_markup=reply_markup, caption="English Tutorial")
     else:
         await message.reply_text('No Video Found', reply_markup=reply_markup)
+
+
+@Client.on_callback_query(filters.regex("^lb_"))
+async def leaderboard_rankings(app: Client, message: CallbackQuery):
+    " Get all the leaderboard with inline buttons"
+    _, lb_id = message.data.split("_")
+    lb = await leaderboard_db.get_leaderboard_by_id(lb_id)
+    users: dict = await leaderboard_db.get_users_by_leaderboard(lb_id)
+    if not lb:
+        await message.answer("Leaderboard not found.", show_alert=True)
+        return
+
+    no_of_winners = lb["no_of_winners"]
+    if no_of_winners == 0:
+        no_of_winners = len(users)
+    else:
+        users = users[:19]
+
+    # get the middle description
+    middle = len(lb["descriptions"]) // 2
+    descriptions: list = [lb["descriptions"][middle], lb["descriptions"][-1]]
+    text = f"**{lb['title']}**\n\n"
+
+    for desc in descriptions:
+        text += f"{desc}\n\n"
+
+    text += f"**No of Winners:** `{no_of_winners}`\n\n"
+    text += "**Leaderboard Ranking**\n\n"
+
+    for i, user in enumerate(users):
+        tg_user = await app.get_users(user["user_id"])
+        # add gold, silver, bronze emoji
+        if i == 0:
+            text += f"🥇"
+        elif i == 1:
+            text += f"🥈"
+        elif i == 2:
+            text += f"🥉"
+        else:
+            text += f"{i + 1}."
+
+        # bold the winner's name
+        if no_of_winners > i:
+            tg_user.first_name = f"**{tg_user.first_name}**"
+
+        text += f"{tg_user.id} - {tg_user.first_name} - `{user['credits']}` Credits\n"
+
+    if not users:
+        text += f"No users found, be the first one to join the leaderboard by clicking on the button below."
+
+    # earn credits button and back to main menu button
+    buttons = [
+        [
+            types.InlineKeyboardButton(
+                "Earn Credits", callback_data="earn"),
+        ],
+        [
+            types.InlineKeyboardButton(
+                "Back", callback_data="leaderboard_rankings"),
+        ],
+    ]
+
+    if message.from_user.id in Config.ADMINS:
+        text += "\n\n**Admin Panel**\n"
+        text += f"**Leaderboard ID:** `/leaderboard {lb_id}`\n"
+
+    reply_markup = types.InlineKeyboardMarkup(buttons)
+    await message.message.edit_text(text, reply_markup=reply_markup)

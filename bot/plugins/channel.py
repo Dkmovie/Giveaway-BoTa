@@ -3,8 +3,7 @@ from datetime import datetime
 from pyrogram import Client, filters, types
 from bot.config import Config
 
-from bot.database import invite_links, user_db, bot_db
-from bot.plugins.filters import backup_channel_filter, main_channel_filter
+from bot.database import invite_links, user_db, bot_db, lb
 from bot.utils import add_new_user, check_spam_for_link
 
 
@@ -17,7 +16,6 @@ async def new_chat_member_main(app: Client, message: types.ChatJoinRequest):
     await add_new_user(app, user_joined, message.from_user.mention)
 
     user_referred = await user_db.filter_user({"referral.channel_ref_link": invite_link})
-    bot_config = await bot_db.get_bot_config()
     await message.approve()
 
     if user_referred:
@@ -31,7 +29,7 @@ async def new_chat_member_main(app: Client, message: types.ChatJoinRequest):
             # await app.revoke_chat_invite_link(chat_id=bot_config["main_channel"], invite_link=invite_link)
             await app.send_message(Config.LOG_CHANNEL, f"**{user_referred['user_id']}**'s link have been found spamming.")
             return
-        
+
         if user_referred['user_id'] == user_joined:
             return
 
@@ -41,6 +39,8 @@ async def new_chat_member_main(app: Client, message: types.ChatJoinRequest):
         await user_db.update_user(user_referred['user_id'], {"share_status.users_joined": user_joined}, tag="push")
         await user_db.update_user(user_referred['user_id'],  {"credits": 1}, tag="inc")
         await user_db.update_user(user_joined, {"credits": 1}, tag="inc")
+        await lb.add_score_to_user(user_joined, 1)
+        await lb.add_score_to_user(user_referred['user_id'], 1)
 
         await app.send_message(
             chat_id=user_referred['user_id'],
@@ -53,4 +53,4 @@ async def new_chat_member_main(app: Client, message: types.ChatJoinRequest):
             )
 
         await invite_links.update_link(invite_link, {"last_joined": datetime.now()}, tag="set")
-        await invite_links.update_link(invite_link, {"users": {str(user_joined):datetime.now()}}, tag="set")
+        await invite_links.update_link(invite_link, {"users": {str(user_joined): datetime.now()}}, tag="set")

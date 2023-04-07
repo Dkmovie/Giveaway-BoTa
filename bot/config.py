@@ -53,3 +53,11 @@ class Messages(object):
     HEADING = os.environ.get("HEADING", HEADING)
     BODY = os.environ.get("BODY", BODY)
     JOIN_TEXT_POPUP = os.environ.get("JOIN_TEXT_POPUP", JOIN_TEXT_POPUP)
+
+    LEADERBOARD_HEADING = "🏆 Giveaway Leaderboard 🏆"
+    LEADERBOARD_DESCRIPTION = [
+        "🏆 **Giveaway Leaderboard** 🏆",
+        "👉 This leaderboard shows the top 10 users who have more credits",
+        "👉 The more giveaways you participate in, the higher you will rank on the leaderboard.",
+    ]
+    LEADERBOARD_WINNERS = 10

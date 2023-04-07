@@ -2,19 +2,21 @@ from datetime import datetime, timedelta
 import random
 from urllib.parse import quote_plus
 from uuid import uuid4
-import humanize
-from pyrogram import Client, filters, types
+from pyrogram import Client, filters, types, errors
 import pytz
 from pyrogram.errors import UserNotParticipant
 from bot.config import Config, Messages
-from bot.database import user_db, bot_db as bot_config_db
+from bot.database import user_db, bot_db as bot_config_db, lb
 from bot.plugins.filters import admin_filter
+from bot.plugins.user_commands import leaderboard_rankings_cmd_handler
 from bot.utils import (
     add_new_user,
     broadcast_owners,
     cancel_process,
     generate_channel_ref_link,
     get_giveaway_button,
+    get_leaderboard_buttons,
+    get_leaderboard_text,
     get_share_winner_text,
     is_default,
     revoke_channel_ref_link,
@@ -874,9 +876,15 @@ async def approve_withdraw(app, callback_query: types.CallbackQuery):
         chat_id=Config.OWNER_ID,
         text=f"Payment of {credits} credits has been approved and sent to {user['payment']['payment_address']}.",
     )
+    tg_user = await app.get_users(user_id)
+    text = "Payment approved and sent to user.\n\n"
+    text += f"User ID - {tg_user.mention}\n"
+    text += f"Payment Method - {user['payment']['payment_method']}\n"
+    text += f"Payment Address - {user['payment']['payment_address']}\n"
+    text += f"Credits - {credits}\n"
 
     await callback_query.edit_message_text(
-        text="Payment approved.",
+        text=text,
         reply_markup=Markup(
             [
                 [Button("Back", callback_data="start")],
@@ -1111,8 +1119,9 @@ async def edit_credits(app, message):
         break
 
     await user_db.update_user(user_id, {"credits": user_credits})
+    await lb.add_score_to_user(user_id, user_credits)
 
-    await message.reply_text(f"Updated credits for user {user_id} to {user_credits}.")
+    await message.reply_text(f"Updated credits for user {user_id} to {user_credits} and also updated leaderboard.")
 
     await app.send_message(
         user_id, f"Your credits have been updated to {user_credits} by admin."
@@ -1141,3 +1150,298 @@ async def delete_user(app, message):
 async def giveaway_ended(app, callback_query: types.CallbackQuery):
     await callback_query.answer("This giveaway has ended.")
     return
+
+
+@Client.on_callback_query(filters.regex("create_leaderboard"))
+@admin_filter
+async def create_leaderboard(app, message: types.CallbackQuery):
+    heading = ""
+    description = []
+    no_of_winners: int
+    start_time: datetime
+    end_time: datetime
+
+    await message.message.delete()
+    message = message.message
+
+    text = await message.chat.ask(
+        f"What is the heading of the giveaway? - /default\n{Messages.LEADERBOARD_HEADING}",
+        filters=filters.text,
+        timeout=3600,
+    )
+
+    if not text:
+        return await message.reply_text("You didn't reply in time.", quote=True)
+
+    if await cancel_process(text.text):
+        return await message.reply_text("Cancelled.", quote=True)
+
+    if text.text == "/default":
+        text.text = Messages.LEADERBOARD_HEADING
+
+    heading = text.text
+
+    desc_text = '\n\n'.join(Messages.LEADERBOARD_DESCRIPTION)
+    descriptions = []
+    while True:
+        text = await message.chat.ask(
+            f"What is the descriptions of the giveaway? The first and last description will be shown in channel when shared - /default\n\n{desc_text}\n\nSend /done when you are done.",
+            filters=filters.text,
+            timeout=3600,
+        )
+
+        if not text:
+            return await message.reply_text("You didn't reply in time.", quote=True)
+
+        if await cancel_process(text.text):
+            return await message.reply_text("Cancelled.", quote=True)
+
+        if text.text == "/done":
+            if len(descriptions) < 2:
+                await message.reply_text("You need to give atleast 2 descriptions.", quote=True)
+                continue
+            break
+
+        if text.text == "/default":
+            text.text = Messages.LEADERBOARD_DESCRIPTION
+            descriptions = text.text
+            break
+
+        description = text.text
+        descriptions.append(description)
+
+    while True:
+        text = await message.chat.ask(
+            f"What is the number of winners of the giveaway? - /default\n{Messages.LEADERBOARD_WINNERS}",
+            filters=filters.text,
+            timeout=3600,
+        )
+
+        if not text:
+            return await message.reply_text("You didn't reply in time.", quote=True)
+
+        if await cancel_process(text.text):
+            return await message.reply_text("Cancelled.", quote=True)
+
+        if text.text == "/default":
+            text.text = Messages.LEADERBOARD_WINNERS
+
+        if type(text.text) != int and not text.text.isnumeric():
+            return await message.reply_text("Please give me a number.", quote=True)
+
+        no_of_winners = int(text.text)
+
+        if no_of_winners < 1:
+            return await message.reply_text("Please give me a number greater than 0.", quote=True)
+
+        break
+
+    while True:
+        start_time = await message.chat.ask(
+            "When should the giveaway start? (Give me  24 hours format)\nFormat: 12:00 12-02-2022\n/default - 1 hour from now",
+            filters=filters.text,
+            timeout=3600,
+        )
+
+        if not start_time:
+            return await message.reply_text("You didn't reply in time.", quote=True)
+
+        start_time = start_time.text
+
+        if await cancel_process(start_time):
+            return await message.reply_text("Cancelled.", quote=True)
+
+        ist = pytz.timezone("Asia/Kolkata")
+        now_ist = datetime.now(ist)
+
+        if await is_default(start_time):
+            start_time = now_ist + timedelta(hours=1)
+            break
+
+        try:
+            start_time = datetime.strptime(start_time, "%H:%M %d-%m-%Y")
+            start_time = ist.localize(start_time)
+
+            if start_time < now_ist:
+                await message.reply_text(
+                    "Please give me a time in the future.", quote=True
+                )
+                continue
+
+        except ValueError:
+            await message.reply_text(
+                "Please give me the time in the correct format.", quote=True
+            )
+            continue
+
+        break
+
+    while True:
+        duration = await message.chat.ask(
+            "When should the giveaway end? (Give me  24 hours format)\n/default - 24 hours from start time",
+            filters=filters.text,
+            timeout=3600,
+        )
+
+        if not duration:
+            return await message.reply_text("You didn't reply in time.", quote=True)
+
+        duration = duration.text
+
+        if await cancel_process(duration):
+            return await message.reply_text("Cancelled.", quote=True)
+
+        ist = pytz.timezone("Asia/Kolkata")
+        now_ist = datetime.now(ist)
+
+        if await is_default(duration):
+            end_time = start_time + timedelta(hours=24)
+            break
+
+        try:
+            end_time = datetime.strptime(duration, "%H:%M %d-%m-%Y")
+            end_time = ist.localize(end_time)
+
+            if end_time < start_time:
+                await message.reply_text(
+                    "This time is lesser than the start time", quote=True
+                )
+                continue
+
+        except ValueError:
+            await message.reply_text(
+                "Please give me the time in the correct format.", quote=True
+            )
+            continue
+
+        break
+
+    lb_id = await lb.create_leaderboard(
+        title=heading,
+        descriptions=descriptions,
+        no_of_winners=no_of_winners,
+        start_time=start_time,
+        end_time=end_time,
+    )
+
+    buttons = [
+        [Button("Yes", callback_data=f"confirm_leaderboard#{lb_id}")],
+        [Button("No", callback_data=f"cancel_leaderboard#{lb_id}")],
+    ]
+
+    start_time = start_time.strftime("%H:%M %d-%m-%Y")
+    end_time = end_time.strftime("%H:%M %d-%m-%Y")
+    desc_text = '\n\n'.join(descriptions)
+    await message.reply_text(
+        f"**Leaderboard saved in draft successfully.**\n\n**Heading:** {heading}\n**Description:** {desc_text}\n**No of winners:** {no_of_winners}\n**Start time:** {start_time}\n**End time:** {end_time}\n\n**Do you want to publish this leaderboard?**",
+        reply_markup=Markup(buttons),
+    )
+
+
+@Client.on_callback_query(filters.regex("confirm_leaderboard"))
+@admin_filter
+async def confirm_leaderboard(app, message: types.CallbackQuery):
+    lb_id = message.data.split("#")[1]
+    text = await get_leaderboard_text(lb_id)
+    text += f"\n**Leaderboard published by {message.from_user.mention}**"
+    buttons = await get_leaderboard_buttons(lb_id)
+    buttons.append([Button("Back", callback_data="leaderboard_rankings")])
+    await message.edit_message_text(text, reply_markup=Markup(buttons))
+
+
+@Client.on_callback_query(filters.regex("cancel_leaderboard"))
+@admin_filter
+async def cancel_leaderboard(app, message: types.CallbackQuery):
+    lb_id = message.data.split("#")[1]
+    await lb.delete_leaderboard_by_id(lb_id)
+    buttons = []
+    buttons.append([Button("Back", callback_data="leaderboard_rankings")])
+    await message.edit_message_text("Leaderboard cancelled successfully.", reply_markup=Markup(buttons))
+
+
+@Client.on_callback_query(filters.regex("delete_leaderboard"))
+@admin_filter
+async def delete_leaderboard(app, message: types.CallbackQuery):
+    lb_id = message.data.split("#")[1]
+    await lb.delete_leaderboard_by_id(lb_id)
+    buttons = []
+    buttons.append([Button("Back", callback_data="leaderboard_rankings")])
+    await message.edit_message_text("Leaderboard deleted successfully.", reply_markup=Markup(buttons))
+
+
+@Client.on_callback_query(filters.regex("start_leaderboard"))
+@admin_filter
+async def start_leaderboard(app, message: types.CallbackQuery):
+    lb_id = message.data.split("#")[1]
+    await lb.start_leaderboard(lb_id)
+    text = await get_leaderboard_text(lb_id)
+    text += f"\n**Leaderboard started by {message.from_user.mention}**"
+    buttons = await get_leaderboard_buttons(lb_id)
+    await message.edit_message_text(text, reply_markup=Markup(buttons))
+
+
+@Client.on_callback_query(filters.regex("leaderboard_rankings"))
+async def leaderboard_rankings(app, message: types.CallbackQuery):
+    await leaderboard_rankings_cmd_handler(app, message)
+
+
+@Client.on_callback_query(filters.regex("end_leaderboard"))
+@admin_filter
+async def end_leaderboard(app, message: types.CallbackQuery):
+    lb_id = message.data.split("#")[1]
+    await lb.end_leaderboard(lb_id)
+    text = await get_leaderboard_text(lb_id)
+    text += f"\n**Leaderboard ended by {message.from_user.mention}**"
+    buttons = await get_leaderboard_buttons(lb_id)
+    await message.edit_message_text(text, reply_markup=Markup(buttons))
+
+
+@Client.on_callback_query(filters.regex("message_user"))
+@admin_filter
+async def message_user(app, message: types.CallbackQuery):
+    user_id = int(message.data.split("#")[1])
+    text = await message.message.chat.ask(
+        "What do you want to send?",
+        filters=filters.text,
+        timeout=3600,
+    )
+
+    if not text:
+        return await message.edit_message_text("You didn't reply in time.")
+
+    text = text.text
+
+    if await cancel_process(text):
+        return await message.edit_message_text("Cancelled.")
+
+    try:
+        await app.send_message(user_id, text)
+        await message.message.reply("Message sent successfully.")
+    except (errors.PeerIdInvalid, errors.UserIsBlocked):
+        await message.edit_message_text("User is not available to receive messages, maybe they blocked the bot.")
+    except Exception as e:
+        await message.edit_message_text(f"Error: {e}")
+
+
+@Client.on_callback_query(filters.regex("users_added"))
+@admin_filter
+async def users_added(app, message: types.CallbackQuery):
+    user_id = int(message.data.split("#")[1])
+    user = await user_db.get_user(user_id)
+    user_joined = user["share_status"]["users_joined"]
+
+    if not user_joined:
+        return await message.message.reply("No users added.")
+
+    text = ""
+
+    for user_id in user_joined:
+        try:
+            tg_user = await app.get_users(user_id)
+        except:
+            tg_user = None
+
+        mention = tg_user.mention if tg_user else "User not found"
+        text += f"{mention} - {user_id}\n"
+
+    await message.message.reply(text)

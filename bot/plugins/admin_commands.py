@@ -1,5 +1,7 @@
 import contextlib
 from datetime import datetime
+import operator
+import os
 from pyrogram import Client, filters
 from pyrogram.types import (
     Message,
@@ -8,10 +10,11 @@ from pyrogram.types import (
     CallbackQuery,
 )
 import pytz
+import tabulate
 from bot.config import Config
-from bot.database import user_db, admin_db, giveaway_db
+from bot.database import user_db, admin_db, giveaway_db, lb as leaderboard_db
 from bot.plugins.filters import make_m
-from bot.utils import get_user_text, utc_to_ist
+from bot.utils import get_leaderboard_buttons, get_leaderboard_text, get_user_text, utc_to_ist
 from bot.plugins.filters import admin_filter
 
 
@@ -29,12 +32,16 @@ async def dashboard(app, message: Message):
         f"Total Admins: {total_admins}\n"
         f"Total Giveaways: {total_giveaways}\n\n"
         f"Admin Commands\n"
+        f"/stats - See number of users\n"
         f"/ban - Ban a user from the bot\n"
         f"/unban - Unban a user from the bot\n"
         f"/addadmin - Add a user as admin\n"
         f"/removeadmin - Remove a user from admin\n"
         f"/create_giveaway - Create a giveaway\n"
         f"/giveaway - The info of the giveaway\n"
+        f"/create_leaderboard - Create a leaderboard\n"
+        f"/leaderboards - The list of leaderboards in bot database\n"
+        f"/leaderboard - The info of the leaderboard\n"
         f"/delete_giveaway - Cancel a giveaway\n"
         f"/users - The list of users in bot database\n"
         f"/user - The info of a user\n"
@@ -252,6 +259,20 @@ async def create_giveaway_cmd(app, message: Message):
     )
 
 
+@Client.on_message(filters.command("create_leaderboard") & filters.private)
+@make_m
+@admin_filter
+async def create_leaderboard_cmd(app, message: Message):
+    text = "Let's create a Leaderboard."
+    await message.reply_text(
+        text,
+        reply_markup=Markup(
+            [[Button("Start", "create_leaderboard")],
+             [Button("Cancel", "cancel")]]
+        ),
+    )
+
+
 # see a list of all the giveaways
 @Client.on_message(filters.command("giveaways") & filters.private)
 @admin_filter
@@ -363,7 +384,6 @@ async def giveaway(app, message: Message):
             Button("📣 Share Winners", switch_inline_query=giveaway_id),
         ])
 
-
     buttons.append([
         Button(
             text="See Participants", url=f"https://telegram.me/test264bot?start=participants_{giveaway['giveaway_id']}"
@@ -402,7 +422,18 @@ async def delete_giveaway(app, message: Message):
 @make_m
 @admin_filter
 async def users(app: Client, message: Message):
-    users = await user_db.get_all_users()
+
+    if len(message.command) == 2:
+        num_users = message.command[1]
+        if not num_users.isdigit():
+            await message.reply_text("Please give me a valid number.")
+            return
+        num_users = int(num_users)
+    else:
+        num_users = 0
+
+    sts = await message.reply_text("Getting users from the database...")
+    users = await user_db.get_all_users(num_users)
 
     user_ids = [user["user_id"] for user in users]
     users_credit = {user["user_id"]: user["credits"] for user in users}
@@ -411,24 +442,31 @@ async def users(app: Client, message: Message):
         return
 
     total_users = len(users)
-    users_text = "Here is the list of users in the database:\n\n"
-    users_text += f"Total Users: {total_users}\n\n"
+    users_text = "Here is the list of users in the database:<br><br>"
+    users_text += f"Total Users: {total_users}<br><br>"
     for tg_user in await app.get_users(user_ids, raise_error=False):
         try:
             credit = users_credit[tg_user.id]
-            users_text += f"- `{tg_user.id}` - {tg_user.mention} - `{credit}`\n"
-        except:
-            pass
-        
-        if len(users_text) > 4096:
-            
-            await message.reply_text(users_text)
-            users_text = ""
+            tg_user.first_name = tg_user.first_name or ""
+            tg_user.last_name = tg_user.last_name or ""
+            tg_user.username = tg_user.username or ""
+            users_text += f"- {tg_user.id} - {tg_user.mention} - {credit}<br>"
+        except Exception:
+            continue
+
+    await sts.delete()
+    if len(users_text) > 4096:
+        # create a table
+        with open("users.html", "w") as f:
+            f.write(users_text)
+        await message.reply_document("users.html")
+        os.remove("users.html")
+        return
 
     await message.reply_text(users_text)
-
-
 # see a particular user
+
+
 @Client.on_message(filters.command("user") & filters.private)
 @admin_filter
 async def user(app, message: Message):
@@ -446,7 +484,9 @@ async def user(app, message: Message):
         return
 
     buttons = [
+        [Button("Message User", f"message_user#{user_id}")],
         [Button("Edit Credits", f"edit_credits#{user_id}")],
+        [Button("Users Added", f"users_added#{user_id}")],
         [Button("Reset Credits to 0", f"reset_credits#{user_id}")],
         [Button("Remove Payment method", f"remove_payment_method#{user_id}")],
         [Button("Ban", f"ban#{user_id}"), Button("Unban", f"unban#{user_id}")],
@@ -486,3 +526,83 @@ async def give_all(app, message: Message):
     # update all users credits at once
     await user_db.update_all_users_credits(credits)
     await message.reply_text(f"Added {credits} credits to all users.")
+
+
+@Client.on_message(filters.command("leaderboard") & filters.private & filters.incoming & filters.user(Config.ADMINS))
+@admin_filter
+async def leaderboard(app, message: Message):
+    "View leaderboard"
+    if not len(message.text.split(" ")) == 2:
+        return await message.reply_text("Please give me a leaderboard id. /leaderboard id", quote=True)
+    lb_id = message.text.split(" ")[1]
+    leaderboard = await leaderboard_db.get_leaderboard_by_id(lb_id)
+    if not leaderboard:
+        return await message.reply_text("Leaderboard not found.", quote=True)
+
+    text = await get_leaderboard_text(lb_id)
+    text += f"\nUsers: {len(leaderboard['users'])}"
+
+    leaderboard["users"] = sorted(
+        leaderboard["users"], key=operator.itemgetter('credits'), reverse=True)
+
+    for user in leaderboard["users"]:
+        tg_user = await app.get_users(user["user_id"], raise_error=False)
+        text += f"\n{user['user_id']} - {user['credits']} - {tg_user.mention if tg_user else 'Deleted Account'}"
+
+    buttons = await get_leaderboard_buttons(lb_id)
+    buttons.append([Button("Back", callback_data="leaderboard_rankings")])
+    return await message.reply_text(text, quote=True, reply_markup=Markup(buttons))
+
+
+@Client.on_message(filters.command("leaderboards") & filters.private & filters.incoming & filters.user(Config.ADMINS))
+@admin_filter
+async def leaderboards(app, message: Message):
+    "View leaderboards"
+    leaderboards = await leaderboard_db.get_all_leaderboards()
+    if not leaderboards:
+        return await message.reply_text("There are no leaderboards in the database.", quote=True)
+
+    buttons = []
+    for leaderboard in leaderboards:
+        buttons.append(
+            [Button(leaderboard["title"],
+                    callback_data=f"lb_{leaderboard['_id']}")]
+        )
+
+    if not buttons:
+        return await message.reply_text("There are no leaderboards in the database.", quote=True)
+
+    buttons.append([Button("Back", callback_data="start")])
+    return await message.reply_text("Here are the leaderboards in the database.", quote=True, reply_markup=Markup(buttons))
+
+
+@Client.on_message(filters.command("stats") & filters.private & filters.incoming & filters.user(Config.ADMINS))
+@admin_filter
+async def stats(app, message: Message):
+    total_added_users = await user_db.get_users_joined_count()
+    total_users = len(await user_db.get_all_users())
+    banned_users = await user_db.total_banned_users_count()
+    text = f"Total Added Users: {total_added_users}\nTotal Users: {total_users}\nBanned Users: {banned_users}"
+    await message.reply_text(text, quote=True)
+
+
+@Client.on_message(filters.command("alltime") & filters.private & filters.incoming & filters.user(Config.ADMINS))
+@admin_filter
+async def alltime(app, message: Message):
+    if not len(message.text.split(" ")) == 2:
+        return await message.reply_text("Please give me a number of users. /alltime 10", quote=True)
+    num = message.text.split(" ")[1]
+    try:
+        num = int(num)
+    except ValueError:
+        return await message.reply_text("Number of users must be an integer.", quote=True)
+
+    users = await user_db.get_documents_by_users_joined_length(num)
+
+    text = f"Top users by referrals:\n"
+    for i, user in enumerate(users):
+        db_user = await user_db.get_user(user["user_id"])
+        tg_user = await app.get_users(user["user_id"], raise_error=False)
+        text += f"\n{i+1}. `{user['user_id']}` - {tg_user.mention if tg_user else 'Deleted Account'} - {len(db_user['share_status']['users_joined'])} referrals"
+
+    await message.reply_text(text, quote=True)
