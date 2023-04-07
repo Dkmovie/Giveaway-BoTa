@@ -441,15 +441,15 @@ async def users(app: Client, message: Message):
         return
 
     total_users = len(users)
-    users_text = "Here is the list of users in the database:<br><br>"
-    users_text += f"Total Users: {total_users}<br><br>"
+    users_text = "Here is the list of users in the database:</br></br>"
+    users_text += f"Total Users: {total_users}</br></br>"
     for tg_user in await app.get_users(user_ids, raise_error=False):
         try:
             credit = users_credit[tg_user.id]
             tg_user.first_name = tg_user.first_name or ""
             tg_user.last_name = tg_user.last_name or ""
             tg_user.username = tg_user.username or ""
-            users_text += f"- {tg_user.id} - {tg_user.mention} - {credit}<br>"
+            users_text += f"- {tg_user.id} - {tg_user.mention} - {credit}</br>"
         except Exception:
             continue
 
@@ -462,7 +462,7 @@ async def users(app: Client, message: Message):
         os.remove("users.html")
         return
 
-    await message.reply_text(users_text)
+    await message.reply_text(users_text.replace("</br>", "\n"))
 # see a particular user
 
 
