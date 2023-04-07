@@ -527,7 +527,7 @@ async def give_all(app, message: Message):
     await message.reply_text(f"Added {credits} credits to all users.")
 
 
-@Client.on_message(filters.command("leaderboard") & filters.private & filters.incoming & filters.user(Config.ADMINS))
+@Client.on_message(filters.command("leaderboard") & filters.private & filters.incoming )
 @admin_filter
 async def leaderboard(app, message: Message):
     "View leaderboard"
@@ -553,7 +553,7 @@ async def leaderboard(app, message: Message):
     return await message.reply_text(text, quote=True, reply_markup=Markup(buttons))
 
 
-@Client.on_message(filters.command("leaderboards") & filters.private & filters.incoming & filters.user(Config.ADMINS))
+@Client.on_message(filters.command("leaderboards") & filters.private & filters.incoming)
 @admin_filter
 async def leaderboards(app, message: Message):
     "View leaderboards"
@@ -575,7 +575,7 @@ async def leaderboards(app, message: Message):
     return await message.reply_text("Here are the leaderboards in the database.", quote=True, reply_markup=Markup(buttons))
 
 
-@Client.on_message(filters.command("stats") & filters.private & filters.incoming & filters.user(Config.ADMINS))
+@Client.on_message(filters.command("stats") & filters.private & filters.incoming)
 @admin_filter
 async def stats(app, message: Message):
     total_added_users = await user_db.get_users_joined_count()
@@ -585,7 +585,7 @@ async def stats(app, message: Message):
     await message.reply_text(text, quote=True)
 
 
-@Client.on_message(filters.command("alltime") & filters.private & filters.incoming & filters.user(Config.ADMINS))
+@Client.on_message(filters.command("alltime") & filters.private & filters.incoming)
 @admin_filter
 async def alltime(app, message: Message):
     if not len(message.text.split(" ")) == 2:
