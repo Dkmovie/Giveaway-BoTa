@@ -10,7 +10,6 @@ from pyrogram.types import (
     CallbackQuery,
 )
 import pytz
-import tabulate
 from bot.config import Config
 from bot.database import user_db, admin_db, giveaway_db, lb as leaderboard_db
 from bot.plugins.filters import make_m

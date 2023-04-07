@@ -1,9 +1,6 @@
-import contextlib
 
 from pyrogram import Client, filters, types
 from pyrogram.types import CallbackQuery, Message
-from tabulate import tabulate
-
 from bot.config import Config
 from bot.database import bot_db, giveaway_db
 from bot.database import lb as leaderboard_db
