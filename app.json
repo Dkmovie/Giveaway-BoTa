@@ -2,8 +2,8 @@
     "name": "Bot",
     "description": "Bot",
     "keywords": ["telegram"],
-    "website": "",
-    "repository": "",
+    "website": "https://github.com/Dkmovie/Giveaway-BoTa",
+    "repository": "https://github.com/Dkmovie/Giveaway-BoTa",
     "env": {
       "BOT_TOKEN": {
         "description": "Your bot token from @botfather",
